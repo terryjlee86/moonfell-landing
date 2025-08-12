@@ -9,7 +9,7 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
-// --- utils ---
+// ---------- utils ----------
 function safeRead(filePath: string) {
   try {
     return fs.readFileSync(filePath, "utf8");
@@ -25,21 +25,27 @@ function trimTo(maxChars: number, text: string) {
     : text;
 }
 
+// ---------- prompt builder ----------
 function buildSystemPrompt(
   scenario: typeof forestAmbush,
   worldDoc: string,
   encounterDoc: string,
-  conductorDoc: string
+  conductorDoc: string,
+  systemDoc: string
 ) {
   const world = trimTo(12000, worldDoc);
   const enc = trimTo(8000, encounterDoc);
   const conductor = trimTo(6000, conductorDoc);
+  const system = trimTo(9000, systemDoc);
 
   return `
 You are the Moonfell encounter engine.
 
-# Encounter Conductor Guide (authoritative)
-${conductor || "[No conductor doc loaded]"}
+# Encounter Conductor Guide (authoritative: narration rules)
+${conductor || "[No conductor doc]"}
+
+# System Rules (authoritative: dice & mechanics)
+${system || "[No system rules doc]"}
 
 # Scenario (hidden referee brief)
 Title: ${scenario.title}
@@ -49,21 +55,21 @@ Referee Notes:
 ${scenario.refereeBrief}
 
 # World Reference (excerpts)
-${world || "[No world doc loaded yet]"}
+${world || "[No world doc]"}
 
 # Encounter Mechanics (excerpts)
-${enc || "[No encounter doc loaded yet]"}
+${enc || "[No encounter doc]"}
 
-# Style & Output
-- 6–10 lines per turn, cinematic and concrete; no fourth-wall.
-- Always offer 3–5 numbered, straightforward options (attack / defend-brace / move / use tool).
-- Leave wild stunts to the player to propose.
-- Never show stats, DCs, or dice unless the player types "debug please", in which case append one short [dbg: …] line.
-- Stay within scenario boundaries. If the player tries to leave, redirect and explain this is a limited preview.
+# Output Contract
+- Follow **PLAYER INTERFACE**, **NARRATION ETIQUETTE**, and **START THE SCENE** in the Conductor Guide.
+- Always include **3–5 numbered, straightforward options**.
+- Apply **System Rules** for initiative/dice; NPCs act proactively when triggers are met.
+- No fourth wall. If the user types **"debug please"**, append one short \`[dbg: …]\` line.
+- Stay within scenario boundaries; if the player tries to leave, redirect (limited preview).
 `.trim();
 }
 
-// --- handler ---
+// ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -82,17 +88,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "Invalid passcode" });
   }
 
-  // Load docs
+  // Load prompt docs
   const worldDoc = safeRead(path.join(process.cwd(), "src", "prompts", "world.md"));
   const encounterDoc = safeRead(path.join(process.cwd(), "src", "prompts", "encounter.md"));
   const conductorDoc = safeRead(path.join(process.cwd(), "src", "prompts", "conductor.md"));
+  const systemDoc = safeRead(path.join(process.cwd(), "src", "prompts", "system.md"));
 
-  // Choose scenario (only one for now)
+  // Choose scenario (extend later if multiple)
   const scenario = forestAmbush;
 
-  const SYSTEM_PROMPT = buildSystemPrompt(scenario, worldDoc, encounterDoc, conductorDoc);
+  const SYSTEM_PROMPT = buildSystemPrompt(
+    scenario,
+    worldDoc,
+    encounterDoc,
+    conductorDoc,
+    systemDoc
+  );
 
-  // Init: send scenario intro without calling the model
+  // Optional: dev echo (commented out by default)
+  // if (process.env.NODE_ENV !== "production" && req.body?.echo === true) {
+  //   return res.status(200).json({ promptPreview: SYSTEM_PROMPT.slice(0, 2000) });
+  // }
+
+  // Init: send scenario intro without spending tokens
   if (init) {
     return res.status(200).json({
       intro: scenario.introForPlayer,
@@ -133,7 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const data = JSON.parse(text);
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
-    if (debugMode) reply += `\n\n[dbg: preview mode; no internal numbers exposed]`;
+    if (debugMode) reply += `\n\n[dbg: preview mode; internal rolls hidden]`;
 
     return res.status(200).json({ reply, scenario: scenario.id });
   } catch (e: any) {
