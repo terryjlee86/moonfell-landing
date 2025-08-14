@@ -12,7 +12,6 @@ export default function Playtest() {
   const [err, setErr] = useState<string>("");
   const viewRef = useRef<HTMLDivElement>(null);
 
-  // scroll to bottom on new message
   useEffect(() => {
     viewRef.current?.scrollTo({ top: viewRef.current.scrollHeight, behavior: "smooth" });
   }, [history, intro]);
@@ -22,7 +21,6 @@ export default function Playtest() {
     setErr("");
     setLoading(true);
     try {
-      // hit API with init=true to get scenario intro (no token spend on our side)
       const r = await fetch("/api/test-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,22 +163,22 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2vh 2vw",
   },
   card: {
-    width: "min(1400px, 90vw)",    // centered, scales with screen width
-    height: "min(90vh, 900px)",    // centered, scales with screen height
+    width: "min(1800px, 95vw)",    // Increased width
+    height: "min(95vh, 1200px)",   // Increased height
     background: "white",
     borderRadius: 16,
     padding: "2vh 2vw",
     boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
     display: "flex",
-    flexDirection: "column",       // lets the viewport flex to fill
+    flexDirection: "column",
   },
   viewport: {
     border: "1px solid #eee",
     borderRadius: 12,
     padding: "1.2rem",
     marginTop: 12,
-    flex: 1,                       // take remaining space
-    minHeight: 0,                  // critical so scroll works inside flex
+    flex: 1,
+    minHeight: 0,
     overflow: "auto",
     background: "#fafafa",
   },
