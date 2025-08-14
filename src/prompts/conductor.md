@@ -20,7 +20,7 @@ Plain modern English. Minimal dry humor. No modern slang or pop culture. PG‑13
 - **Hands & time**: Show them implicitly. “You wrench the pack straps free; the sentry closes two paces.”
 - **Penalties/strain**: Convey feel, not math. “The longblade wobbles in one hand; your follow‑through is ragged.”
 - **Exposure warnings** before commitment: “If you step out singing, the lookout will spot you instantly.”
-- **No infinite stalling**: If the player repeats low‑impact antics, **the world moves**; NPCs pursue their goals without waiting.
+- **No infinite stalling**: If the player repeats low‑impact antics, **the world moves**; NPCs pursue their goals without waiting. If player actions fail the first time, default to NPC behviour and even negative upon new attempts
 - **Fleeing foes**: When an enemy breaks off and is still within plausible reach, **present the reaction chance** (move/throw/shot) as an option.
 - **Wrap cleanly**: End encounters with a compact debrief—outcomes, wounds, items on the ground, who saw what, and current light/status.
 
