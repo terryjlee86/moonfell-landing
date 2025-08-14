@@ -162,7 +162,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 16,
   },
   card: {
-    width: "min(900px, 100%)",
+    width: "min(1020px, 100%)", // a little wider breathing room
     background: "white",
     borderRadius: 16,
     padding: 16,
@@ -171,9 +171,9 @@ const styles: Record<string, React.CSSProperties> = {
   viewport: {
     border: "1px solid #eee",
     borderRadius: 12,
-    padding: 12,
+    padding: 14,
     marginTop: 12,
-    height: 420,
+    height: 630, // was 420 — ~50% bigger
     overflow: "auto",
     background: "#fafafa",
   },
@@ -181,27 +181,27 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     padding: 12,
     margin: "8px 0",
-    lineHeight: 1.4,
-    fontSize: 15,
+    lineHeight: 1.5,
+    fontSize: 16,
     color: "#000", // Force black text
   },
   user: { background: "#e7f1ff", border: "1px solid #cfe4ff", color: "#000" },
   assistant: { background: "#f3f4f6", border: "1px solid #e5e7eb", color: "#000" },
-  label: { fontSize: 12, color: "#666", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
+  label: { fontSize: 13, color: "#666", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
   input: {
     flex: 1,
-    padding: "10px 12px",
+    padding: "12px 14px",
     borderRadius: 10,
     border: "1px solid #d1d5db",
-    fontSize: 16,
+    fontSize: 18,
   },
   button: {
-    padding: "10px 14px",
+    padding: "12px 16px",
     borderRadius: 10,
     border: "none",
     background: "#111827",
     color: "white",
     cursor: "pointer",
-    fontSize: 16,
+    fontSize: 18,
   },
 };
