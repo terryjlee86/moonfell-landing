@@ -22,6 +22,7 @@ export default function Playtest() {
     setErr("");
     setLoading(true);
     try {
+      // hit API with init=true to get scenario intro (no token spend on our side)
       const r = await fetch("/api/test-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,10 +80,12 @@ export default function Playtest() {
   return (
     <main style={styles.main}>
       <section style={styles.card}>
-        <h1 style={{ margin: 0 }}>Moonfell Playtest (Preview)</h1>
-        <p style={{ marginTop: 6, color: "#666" }}>
-          Text-only, rules-driven preview. Actions can be anything you can describe. Boundaries are tight for this demo.
-        </p>
+        <header>
+          <h1 style={{ margin: 0 }}>Moonfell Playtest (Preview)</h1>
+          <p style={{ marginTop: 6, color: "#444" }}>
+            Text-only, rules-driven preview. Actions can be anything you can describe. Boundaries are tight for this demo.
+          </p>
+        </header>
 
         {!authed ? (
           <form onSubmit={unlock} style={{ marginTop: 16, display: "flex", gap: 8 }}>
@@ -127,7 +130,7 @@ export default function Playtest() {
               )}
             </div>
 
-            <form onSubmit={send} style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <form onSubmit={send} style={styles.inputRow}>
               <input
                 type="text"
                 placeholder="Describe exactly what you do…"
@@ -155,24 +158,29 @@ export default function Playtest() {
 const styles: Record<string, React.CSSProperties> = {
   main: {
     minHeight: "100vh",
-    display: "grid",
-    placeItems: "center",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     background: "linear-gradient(180deg, #0b0f17 0%, #121826 100%)",
     padding: "2vh 2vw",
   },
   card: {
-    width: "min(1400px, 95vw)", // fills most of the monitor width
+    width: "min(1400px, 90vw)",    // centered, scales with screen width
+    height: "min(90vh, 900px)",    // centered, scales with screen height
     background: "white",
     borderRadius: 16,
     padding: "2vh 2vw",
     boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
+    display: "flex",
+    flexDirection: "column",       // lets the viewport flex to fill
   },
   viewport: {
     border: "1px solid #eee",
     borderRadius: 12,
     padding: "1.2rem",
     marginTop: 12,
-    height: "min(72vh, 1000px)", // scales with screen height, capped to avoid super tall panes
+    flex: 1,                       // take remaining space
+    minHeight: 0,                  // critical so scroll works inside flex
     overflow: "auto",
     background: "#fafafa",
   },
@@ -187,6 +195,11 @@ const styles: Record<string, React.CSSProperties> = {
   user: { background: "#e7f1ff", border: "1px solid #cfe4ff", color: "#000" },
   assistant: { background: "#f3f4f6", border: "1px solid #e5e7eb", color: "#000" },
   label: { fontSize: 13, color: "#666", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
+  inputRow: {
+    marginTop: 12,
+    display: "flex",
+    gap: 8,
+  },
   input: {
     flex: 1,
     padding: "12px 14px",
