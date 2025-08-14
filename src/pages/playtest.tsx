@@ -22,7 +22,6 @@ export default function Playtest() {
     setErr("");
     setLoading(true);
     try {
-      // hit API with init=true to get scenario intro (no token spend on our side)
       const r = await fetch("/api/test-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,21 +158,21 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     placeItems: "center",
     background: "linear-gradient(180deg, #0b0f17 0%, #121826 100%)",
-    padding: 16,
+    padding: "2vh 2vw",
   },
   card: {
-    width: "min(1020px, 100%)", // a little wider breathing room
+    width: "min(1400px, 95vw)", // fills most of the monitor width
     background: "white",
     borderRadius: 16,
-    padding: 16,
+    padding: "2vh 2vw",
     boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
   },
   viewport: {
     border: "1px solid #eee",
     borderRadius: 12,
-    padding: 14,
+    padding: "1.2rem",
     marginTop: 12,
-    height: 630, // was 420 — ~50% bigger
+    height: "min(72vh, 1000px)", // scales with screen height, capped to avoid super tall panes
     overflow: "auto",
     background: "#fafafa",
   },
@@ -183,7 +182,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "8px 0",
     lineHeight: 1.5,
     fontSize: 16,
-    color: "#000", // Force black text
+    color: "#000",
   },
   user: { background: "#e7f1ff", border: "1px solid #cfe4ff", color: "#000" },
   assistant: { background: "#f3f4f6", border: "1px solid #e5e7eb", color: "#000" },
