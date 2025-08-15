@@ -70,9 +70,6 @@ export default function Home() {
   return (
     <main className="bg-[var(--bg)] text-[var(--fg)]">
       {/* HERO — full-bleed with explicit height so the background is visible */}
-      <div className="p-2 bg-fuchsia-500 text-black font-bold md:bg-lime-400">
-  Tailwind ACTIVE — fuchsia on mobile, lime on desktop
-</div>
 
       <section className="relative isolate min-h-[60vh] md:min-h-[70vh]">
         {/* Desktop background */}
