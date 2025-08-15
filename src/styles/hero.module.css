@@ -1,0 +1,75 @@
+/* styles/hero.module.css */
+.heroSection {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #000; /* fallback while images load */
+  color: #fff;
+}
+
+.bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+.bgDesktop { display: none; }
+.bgMobile { display: block; }
+
+@media (min-width: 768px) {
+  .bgDesktop { display: block; }
+  .bgMobile { display: none; }
+}
+
+.bgImage {
+  object-fit: cover;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  /* gradient to keep text readable on any art */
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.55) 0%,
+    rgba(0,0,0,0.35) 40%,
+    rgba(0,0,0,0.65) 100%
+  );
+}
+
+.inner {
+  max-width: 80rem; /* ~1280px */
+  margin: 0 auto;
+  padding: 6rem 1rem 4rem;
+}
+
+@media (min-width: 768px) {
+  .inner { padding: 9rem 2rem 6rem; }
+}
+
+.copy {
+  max-width: 48rem; /* ~768px */
+}
+
+.title {
+  font-size: clamp(2rem, 4vw + 1rem, 3.75rem);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.subtitle {
+  margin-top: 0.75rem;
+  font-size: clamp(1rem, 1.2vw + 0.7rem, 1.5rem);
+  color: rgba(255,255,255,0.9);
+}
+
+.formWrap {
+  margin-top: 1.5rem;
+}
+
+.trust {
+  margin-top: 0.75rem;
+  font-size: 0.95rem;
+  color: rgba(255,255,255,0.75);
+}
