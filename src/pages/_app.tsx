@@ -9,6 +9,7 @@ import { GA_ID, META_PIXEL_ID, gaPageview } from "../lib/analytics";
 export default function MyApp({ Component, pageProps }: AppProps) {
   const router = useRouter();
 
+  // Track client-side route changes in GA4
   useEffect(() => {
     const handleRouteChange = (url: string) => gaPageview(url);
     router.events.on("routeChangeComplete", handleRouteChange);

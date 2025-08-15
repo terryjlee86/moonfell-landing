@@ -122,10 +122,10 @@ export default function Home() {
 
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
           <div className="max-w-[720px]">
-            {/* LOGO wordmark */}
+            {/* LOGO wordmark (left-aligned) */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/logo-moonfell.svg" // make sure the file is in /public
+              src="/logo-moonfell.svg"
               alt="Moonfell"
               className="h-10 md:h-12 w-auto select-none"
               draggable={false}
@@ -140,7 +140,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ========================= SIGNUP (placed well below hero) ========================= */}
+      {/* ========================= SIGNUP (below hero) ========================= */}
       <section id="signup" className="mx-auto max-w-[900px] px-5 mt-48 sm:mt-56 md:mt-72 lg:mt-80 mb-10">
         <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
           <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
@@ -187,10 +187,10 @@ export default function Home() {
             </form>
           )}
 
-          {/* Discord (replace YOUR_INVITE_CODE) */}
+          {/* Discord (permanent invite) */}
           <div className="mt-4">
             <a
-              href="https://discord.gg/hdafA58N"
+              href="https://discord.gg/hdafA58Nn"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
