@@ -1,4 +1,4 @@
-// pages/index.tsx
+// src/pages/index.tsx
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 
@@ -221,6 +221,71 @@ export default function Home() {
           </small>
         </section>
       </section>
+
+      {/* FAQ — accessible, no-JS accordion */}
+      <section className="border-t border-white/10">
+        <div className="mx-auto max-w-[900px] px-5 py-12">
+          <h2 className="text-2xl md:text-3xl font-semibold mb-4">FAQ</h2>
+
+          <div className="space-y-3">
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">
+                What is Moonfell?
+              </summary>
+              <div className="mt-2 text-[var(--muted)]">
+                Moonfell is a text‑first, single‑player frontier RPG. You describe actions in your own words; the world responds using rules, stats and dice under the hood.
+              </div>
+            </details>
+
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">
+                How do I join the playtest?
+              </summary>
+              <div className="mt-2 text-[var(--muted)]">
+                Add your email above. We’ll invite waitlisters in waves and send regular development updates.
+              </div>
+            </details>
+
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">
+                Is it really single‑player but a shared world?
+              </summary>
+              <div className="mt-2 text-[var(--muted)]">
+                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no real‑time multiplayer).
+              </div>
+            </details>
+
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">
+                Is it text‑only?
+              </summary>
+              <div className="mt-2 text-[var(--muted)]">
+                In‑game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
+              </div>
+            </details>
+
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">
+                When will it be available?
+              </summary>
+              <div className="mt-2 text-[var(--muted)]">
+                We’ll announce playtest waves via email. Join the waitlist to be first through the gate.
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-white/10">
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-8 text-sm text-white/80 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+          <p>© {new Date().getFullYear()} Moonfell. All rights reserved.</p>
+          <nav className="flex gap-5">
+            <a className="hover:text-white" href="/privacy">Privacy</a>
+            <a className="hover:text-white" href="/terms">Terms</a>
+          </nav>
+        </div>
+      </footer>
     </main>
   );
 }
