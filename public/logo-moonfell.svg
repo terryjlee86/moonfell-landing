@@ -1,0 +1,26 @@
+<!-- public/logo-moonfell.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="120" viewBox="0 0 560 120" role="img" aria-labelledby="title desc">
+  <title id="title">Moonfell</title>
+  <desc id="desc">Crescent emblem and Moonfell wordmark</desc>
+  <defs>
+    <linearGradient id="mf-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E6D1A3"></stop>
+      <stop offset="1" stop-color="#CBAE7B"></stop>
+    </linearGradient>
+  </defs>
+
+  <!-- Emblem -->
+  <g transform="translate(10,10)">
+    <!-- Outer circle -->
+    <circle cx="38" cy="50" r="38" fill="url(#mf-gold)"></circle>
+    <!-- Inner cut to form crescent -->
+    <circle cx="54" cy="40" r="28" fill="#0b0d10"></circle>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(110,26)">
+    <text x="0" y="52" font-family="Ibarra Real Nova, Georgia, 'Times New Roman', serif" font-size="64" font-weight="700" letter-spacing="4" fill="#E6D1A3">
+      MOONFELL
+    </text>
+  </g>
+</svg>
