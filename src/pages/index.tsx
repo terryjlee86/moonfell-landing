@@ -51,6 +51,17 @@ export default function Home() {
   const [err, setErr] = useState<string>("");
   const utm = useUTM();
 
+  // ---- Micro-conversion handlers ----
+  const handleCtaClick = () => {
+    gaEvent("click_signup_cta", { location: "signup_card", page: "landing" });
+    fbqEvent("Lead");
+  };
+
+  const handleDiscordClick = () => {
+    gaEvent("click_discord", { location: "signup_card", page: "landing" });
+    fbqEvent("Contact");
+  };
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setStatus("loading");
@@ -122,12 +133,12 @@ export default function Home() {
 
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
           <div className="max-w-[720px]">
-            {/* LOGO wordmark (left-aligned) */}
+            {/* LOGO wordmark (left-aligned) — ~3× larger */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo-moonfell.svg"
               alt="Moonfell"
-              className="h-10 md:h-12 w-auto select-none"
+              className="h-[120px] md:h-[144px] w-auto select-none"
               draggable={false}
             />
             <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-white">
@@ -165,6 +176,7 @@ export default function Home() {
                   required
                 />
                 <button
+                  onClick={handleCtaClick}
                   disabled={status === "loading"}
                   className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
                 >
@@ -190,6 +202,7 @@ export default function Home() {
           {/* Discord (permanent invite) */}
           <div className="mt-4">
             <a
+              onClick={handleDiscordClick}
               href="https://discord.gg/hdafA58Nn"
               target="_blank"
               rel="noopener noreferrer"
