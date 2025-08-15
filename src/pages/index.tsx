@@ -1,6 +1,8 @@
 // src/pages/index.tsx
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
+import FollowSignup from "../components/FollowSignup";
+
 
 /** HERO IMAGES (you can switch later) */
 const HERO_DESKTOP = "/images/hero/Desktop/Hero1D.webp";
@@ -263,6 +265,8 @@ export default function Home() {
           </nav>
         </div>
       </footer>
+      <FollowSignup />
+
     </main>
   );
 }
