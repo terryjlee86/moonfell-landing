@@ -86,8 +86,8 @@ export default function Home() {
     <main className="bg-[var(--bg)] text-[var(--fg)]">
       {/* ========================= HERO ========================= */}
       <section className="relative isolate">
-        {/* Background (fixed height so it always renders) */}
-        <div className="relative w-full h-[62vh] md:h-[72vh]">
+        {/* Background (taller, biased to show the top of the image) */}
+        <div className="relative w-full h-[70vh] md:h-[82vh]">
           {/* Desktop background */}
           <div className="hidden md:block absolute inset-0 -z-10">
             <Image
@@ -96,7 +96,7 @@ export default function Home() {
               fill
               priority
               sizes="100vw"
-              className="object-cover"
+              className="object-cover object-top"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/70" />
           </div>
@@ -108,7 +108,7 @@ export default function Home() {
               fill
               priority
               sizes="100vw"
-              className="object-cover"
+              className="object-cover object-top"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/75" />
           </div>
@@ -117,8 +117,8 @@ export default function Home() {
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
         </div>
 
-        {/* Foreground copy, pulled up over the image */}
-        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[48vh] md:-mt-[54vh] pb-10 md:pb-14">
+        {/* Foreground copy (no overlap now) */}
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
           <div className="max-w-[720px]">
             {/* <img src="/logo-moonfell.svg" alt="Moonfell" className="h-10 md:h-12 w-auto select-none" draggable={false}/> */}
             <div className="uppercase tracking-[0.14em] text-sm text-[var(--accent)] font-bold">Moonfell</div>
@@ -132,8 +132,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ========================= SIGNUP (now its own section, aligned with features) ========================= */}
-      <section id="signup" className="mx-auto max-w-[900px] px-5 -mt-10 md:-mt-12 mb-8 md:mb-10">
+      {/* ========================= SIGNUP (much lower, before features) ========================= */}
+      <section id="signup" className="mx-auto max-w-[900px] px-5 mt-24 sm:mt-28 md:mt-40 lg:mt-48 mb-10">
         <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
           <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
           {status === "ok" ? (
@@ -185,7 +185,7 @@ export default function Home() {
       </section>
 
       {/* ========================= FEATURES ========================= */}
-      <section className="py-6 sm:py-8">
+      <section className="py-8 sm:py-10">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {FEATURE_IMAGES.map((f) => (
@@ -286,7 +286,7 @@ export default function Home() {
       </section>
 
       {/* ========================= FOOTER ========================= */}
-      <footer className="border-top border-white/10">
+      <footer className="border-t border-white/10">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-8 text-sm text-white/80 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Moonfell. All rights reserved.</p>
           <nav className="flex gap-5">
