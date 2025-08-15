@@ -4,9 +4,8 @@ module.exports = {
     "./pages/**/*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}",
     "./layouts/**/*.{js,ts,jsx,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx}", // <-- include src
   ],
-  theme: {
-    extend: {},
-  },
-  plugins: [require("@tailwindcss/forms")],
+  theme: { extend: {} },
+  plugins: [], // add require("@tailwindcss/forms") later if you want
 };
