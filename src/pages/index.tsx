@@ -64,10 +64,7 @@ export default function Home() {
       utm,
       hp: f.website.value, // honeypot
     };
-    if (data.hp) { // pretend success for bots
-      setStatus("ok");
-      return;
-    }
+    if (data.hp) { setStatus("ok"); return; }
     try {
       const r = await fetch("/api/subscribe", {
         method: "POST",
@@ -101,7 +98,6 @@ export default function Home() {
               sizes="100vw"
               className="object-cover"
             />
-            {/* readability */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/70" />
           </div>
           {/* Mobile background */}
@@ -124,7 +120,6 @@ export default function Home() {
         {/* Foreground copy, pulled up over the image */}
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[48vh] md:-mt-[54vh] pb-10 md:pb-14">
           <div className="max-w-[720px]">
-            {/* Swap to logo if you’ve added /logo-moonfell.svg */}
             {/* <img src="/logo-moonfell.svg" alt="Moonfell" className="h-10 md:h-12 w-auto select-none" draggable={false}/> */}
             <div className="uppercase tracking-[0.14em] text-sm text-[var(--accent)] font-bold">Moonfell</div>
             <h1 className="mt-2 text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-white">
@@ -135,67 +130,62 @@ export default function Home() {
             </p>
           </div>
         </div>
+      </section>
 
-        {/* Signup card — centered, overlapping the fold */}
-        <div className="absolute left-1/2 bottom-0 translate-x-[-50%] translate-y-[50%] w-full px-4">
-          <section id="signup" className="mx-auto max-w-[900px]">
-            <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
-              <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
-              {status === "ok" ? (
-                <p className="mt-2 text-[var(--muted)]">Thanks! Check your inbox to confirm your email.</p>
-              ) : (
-                <form onSubmit={onSubmit} className="mt-3">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                      type="text"
-                      name="name"
-                      placeholder="Name (optional)"
-                      autoComplete="name"
-                    />
-                    <input
-                      className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                      type="email"
-                      name="email"
-                      placeholder="Email"
-                      autoComplete="email"
-                      required
-                    />
-                    <button
-                      disabled={status === "loading"}
-                      className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
-                    >
-                      {status === "loading" ? "Joining…" : "Join the Frontier"}
-                    </button>
-                  </div>
+      {/* ========================= SIGNUP (now its own section, aligned with features) ========================= */}
+      <section id="signup" className="mx-auto max-w-[900px] px-5 -mt-10 md:-mt-12 mb-8 md:mb-10">
+        <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
+          <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
+          {status === "ok" ? (
+            <p className="mt-2 text-[var(--muted)]">Thanks! Check your inbox to confirm your email.</p>
+          ) : (
+            <form onSubmit={onSubmit} className="mt-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                  type="text"
+                  name="name"
+                  placeholder="Name (optional)"
+                  autoComplete="name"
+                />
+                <input
+                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  autoComplete="email"
+                  required
+                />
+                <button
+                  disabled={status === "loading"}
+                  className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
+                >
+                  {status === "loading" ? "Joining…" : "Join the Frontier"}
+                </button>
+              </div>
 
-                  {/* honeypot */}
-                  <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
+              {/* honeypot */}
+              <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
 
-                  <label className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
-                    <input type="checkbox" name="consent" required />
-                    <span>
-                      I agree to receive updates about Moonfell and accept the{" "}
-                      <a className="underline" href="/privacy">Privacy Policy</a>.
-                    </span>
-                  </label>
+              <label className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
+                <input type="checkbox" name="consent" required />
+                <span>
+                  I agree to receive updates about Moonfell and accept the{" "}
+                  <a className="underline" href="/privacy">Privacy Policy</a>.
+                </span>
+              </label>
 
-                  {status === "err" && <small className="mt-2 block text-red-300">{err}</small>}
-                </form>
-              )}
-              <small className="mt-2 block text-[var(--muted)]">
-                <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
-              </small>
-            </div>
-          </section>
+              {status === "err" && <small className="mt-2 block text-red-300">{err}</small>}
+            </form>
+          )}
+          <small className="mt-2 block text-[var(--muted)]">
+            <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
+          </small>
         </div>
       </section>
 
-      {/* Spacer so features do not collide with the overlapping signup card */}
-      <div className="h-[140px] md:h-[160px]" />
-
       {/* ========================= FEATURES ========================= */}
-      <section className="py-10 sm:py-12">
+      <section className="py-6 sm:py-8">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {FEATURE_IMAGES.map((f) => (
