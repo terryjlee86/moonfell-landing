@@ -1,6 +1,7 @@
 // src/pages/index.tsx
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
+import { gaEvent, fbqEvent } from "../lib/analytics";
 
 /** HERO IMAGES */
 const HERO_DESKTOP = "/images/hero/Desktop/Hero1D.webp";
@@ -62,7 +63,10 @@ export default function Home() {
       utm,
       hp: f.website.value, // honeypot
     };
-    if (data.hp) { setStatus("ok"); return; }
+    if (data.hp) {
+      setStatus("ok");
+      return;
+    }
     try {
       const r = await fetch("/api/subscribe", {
         method: "POST",
@@ -70,7 +74,10 @@ export default function Home() {
         body: JSON.stringify(data),
       });
       setStatus(r.ok ? "ok" : "err");
-      if (!r.ok) {
+      if (r.ok) {
+        gaEvent("signup", { method: "beehiiv" });
+        fbqEvent("CompleteRegistration");
+      } else {
         const j = await r.json().catch(() => ({}));
         setErr(j.error || "Something went wrong");
       }
@@ -82,7 +89,7 @@ export default function Home() {
 
   return (
     <main className="bg-[var(--bg)] text-[var(--fg)]">
-      {/* HERO */}
+      {/* ========================= HERO ========================= */}
       <section className="relative isolate">
         <div className="relative w-full h-[70vh] md:h-[82vh]">
           {/* Desktop */}
@@ -109,13 +116,21 @@ export default function Home() {
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/75" />
           </div>
-          {/* Fade */}
+          {/* Fade into page */}
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
         </div>
+
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
           <div className="max-w-[720px]">
-            <div className="uppercase tracking-[0.14em] text-sm text-[var(--accent)] font-bold">Moonfell</div>
-            <h1 className="mt-2 text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-white">
+            {/* LOGO wordmark */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo-moonfell.svg" // make sure the file is in /public
+              alt="Moonfell"
+              className="h-10 md:h-12 w-auto select-none"
+              draggable={false}
+            />
+            <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-white">
               Write your legend into the wilds.
             </h1>
             <p className="mt-3 text-lg md:text-xl text-white/90">
@@ -125,7 +140,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* SIGNUP */}
+      {/* ========================= SIGNUP (placed well below hero) ========================= */}
       <section id="signup" className="mx-auto max-w-[900px] px-5 mt-48 sm:mt-56 md:mt-72 lg:mt-80 mb-10">
         <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
           <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
@@ -134,40 +149,77 @@ export default function Home() {
           ) : (
             <form onSubmit={onSubmit} className="mt-3">
               <div className="flex flex-col sm:flex-row gap-2">
-                <input className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]" type="text" name="name" placeholder="Name (optional)" autoComplete="name" />
-                <input className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]" type="email" name="email" placeholder="Email" autoComplete="email" required />
-                <button disabled={status === "loading"} className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70">
+                <input
+                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                  type="text"
+                  name="name"
+                  placeholder="Name (optional)"
+                  autoComplete="name"
+                />
+                <input
+                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  autoComplete="email"
+                  required
+                />
+                <button
+                  disabled={status === "loading"}
+                  className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
+                >
                   {status === "loading" ? "Joining…" : "Join the Frontier"}
                 </button>
               </div>
+
+              {/* honeypot */}
               <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
+
               <label className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
                 <input type="checkbox" name="consent" required />
-                <span>I agree to receive updates about Moonfell and accept the <a className="underline" href="/privacy">Privacy Policy</a>.</span>
+                <span>
+                  I agree to receive updates about Moonfell and accept the{" "}
+                  <a className="underline" href="/privacy">Privacy Policy</a>.
+                </span>
               </label>
+
               {status === "err" && <small className="mt-2 block text-red-300">{err}</small>}
             </form>
           )}
-          {/* Discord */}
+
+          {/* Discord (replace YOUR_INVITE_CODE) */}
           <div className="mt-4">
-            <a href="https://discord.gg/hdafA58N" target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95">
+            <a
+              href="https://discord.gg/hdafA58N"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
+            >
               Join our Discord Community
             </a>
           </div>
+
           <small className="mt-2 block text-[var(--muted)]">
             <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
           </small>
         </div>
       </section>
 
-      {/* FEATURES */}
+      {/* ========================= FEATURES ========================= */}
       <section className="py-8 sm:py-10">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {FEATURE_IMAGES.map((f) => (
               <article key={f.src} className="rounded-2xl overflow-hidden border border-white/10 bg-black/30">
                 <div className="relative aspect-[4/3]">
-                  <Image src={f.src} alt={f.alt} fill sizes="(max-width:640px) 100vw, (max-width:1024px) 50vw, 33vw" className="object-cover" loading="lazy" />
+                  <Image
+                    src={f.src}
+                    alt={f.alt}
+                    fill
+                    sizes="(max-width:640px) 100vw, (max-width:1024px) 50vw, 33vw"
+                    className="object-cover"
+                    loading="lazy"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent pointer-events-none" />
                 </div>
                 <div className="p-5">
@@ -180,39 +232,89 @@ export default function Home() {
         </div>
       </section>
 
-      {/* LONG COPY */}
+      {/* ========================= LORE / SYSTEM COPY ========================= */}
       <section className="mx-auto max-w-[900px] px-5 pb-4">
-        <h2>Not a menu of options. A world that reacts to you.</h2>
-        <p>In Moonfell, your actions are whatever you can describe— in your own words. The framework checks your skills, the terrain, the timing, the weather, the distance, and the instincts of every creature and character in the world. The outcome is always grounded in the Rules of Moonfell.</p>
-        <h2>The Rules of Moonfell</h2>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
-          <li><strong>Responsive</strong> — Every action is tested against stats, skills, and the environment.</li>
-          <li><strong>Unscripted</strong> — No two solutions are the same.</li>
-        </ul>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-4">
-          <div><h3>Combat Freedom</h3><p><em>Most games give you “attack” or “defend.” In Moonfell, you can grab a stump, brace, and rip a spider from its web. If you’re strong, close, and quick enough, it works. If not, it pulls you closer.</em></p></div>
-          <div><h3>Environment Interaction</h3><p><em>Most games give you “cross” or “don’t cross.” In Moonfell, you can cut the bridge to drop your pursuers, stake the rope, and haul yourself over. If you’ve got the timing and grip, you make it. If not, the gorge wins.</em></p></div>
-          <div><h3>Dynamic Conversation</h3><p><em>Most games give you a “Talk” option with a set list of responses. In Moonfell, you can say anything you want...</em></p></div>
-          <div><h3>Live Any Life</h3><p>You could be the Tavern Champion, rule the wilds, become a pirate, or map the frontier...</p></div>
-        </div>
-      </section>
+        <h2 className="text-2xl md:text-3xl font-semibold">A world that listens — and pushes back.</h2>
+        <p className="mt-2">
+          Describe your intent in your own words. Moonfell resolves outcomes with stats, distance, timing, light and noise,
+          and the instincts of every creature in play. The result is simulation first — narrative second.
+        </p>
 
-      {/* FAQ */}
-      <section className="border-t border-white/10">
-        <div className="mx-auto max-w-[900px] px-5 py-12">
-          <h2 className="text-2xl md:text-3xl font-semibold mb-4">FAQ</h2>
-          <div className="space-y-3">
-            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30"><summary className="cursor-pointer list-none font-semibold">What is Moonfell?</summary><div className="mt-2 text-[var(--muted)]">Moonfell is a text-first...</div></details>
-            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30"><summary className="cursor-pointer list-none font-semibold">How do I join the playtest?</summary><div className="mt-2 text-[var(--muted)]">Add your email above...</div></details>
-            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30"><summary className="cursor-pointer list-none font-semibold">Is it really single-player but a shared world?</summary><div className="mt-2 text-[var(--muted)]">Yes. You play at your own pace...</div></details>
-            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30"><summary className="cursor-pointer list-none font-semibold">Is it text-only?</summary><div className="mt-2 text-[var(--muted)]">In-game presentation is prose...</div></details>
-            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30"><summary className="cursor-pointer list-none font-semibold">When will it be available?</summary><div className="mt-2 text-[var(--muted)]">We’ll announce playtest waves...</div></details>
+        <h2 className="mt-8 text-2xl md:text-3xl font-semibold">The Rules of Moonfell</h2>
+        <ul className="list-disc pl-6 space-y-2 mt-2">
+          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
+          <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
+          <li><strong>Unscripted</strong> — No fixed choices. Creativity matters.</li>
+        </ul>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
+          <div>
+            <h3 className="text-lg font-semibold">Combat Freedom</h3>
+            <p className="mt-1 text-[var(--muted)]">
+              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re pulled in.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Environment Interaction</h3>
+            <p className="mt-1 text-[var(--muted)]">
+              Cut a rope bridge, stake it, and swing across — if timing and grip checks pass. Fail, and the gorge decides.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Dynamic Conversation</h3>
+            <p className="mt-1 text-[var(--muted)]">
+              Say anything. Persuasion rolls test Charisma against willpower and wit — and critical failures can turn tempers.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Live Any Life</h3>
+            <p className="mt-1 text-[var(--muted)]">
+              Map the frontier, raise a sky-city, rule a port, or vanish into the wilds. If the rules allow it, it’s possible.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* FOOTER */}
+      {/* ========================= FAQ ========================= */}
+      <section className="border-t border-white/10">
+        <div className="mx-auto max-w-[900px] px-5 py-12">
+          <h2 className="text-2xl md:text-3xl font-semibold mb-4">FAQ</h2>
+          <div className="space-y-3">
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">What is Moonfell?</summary>
+              <div className="mt-2 text-[var(--muted)]">
+                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds using rules, stats and dice under the hood.
+              </div>
+            </details>
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">How do I join the playtest?</summary>
+              <div className="mt-2 text-[var(--muted)]">
+                Add your email above. We’ll invite waitlisters in waves and send regular development updates.
+              </div>
+            </details>
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">Is it really single-player but a shared world?</summary>
+              <div className="mt-2 text-[var(--muted)]">
+                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no real-time multiplayer).
+              </div>
+            </details>
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">Is it text-only?</summary>
+              <div className="mt-2 text-[var(--muted)]">
+                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
+              </div>
+            </details>
+            <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
+              <summary className="cursor-pointer list-none font-semibold">When will it be available?</summary>
+              <div className="mt-2 text-[var(--muted)]">
+                We’ll announce playtest waves via email. Join the waitlist to be first through the gate.
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      {/* ========================= FOOTER ========================= */}
       <footer className="border-t border-white/10">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-8 text-sm text-white/80 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Moonfell. All rights reserved.</p>
