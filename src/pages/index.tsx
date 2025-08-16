@@ -51,7 +51,7 @@ export default function Home() {
   const [err, setErr] = useState<string>("");
   const utm = useUTM();
 
-  // Discord micro-conversion (kept)
+  // Discord micro-conversion
   const handleDiscordClick = () => {
     gaEvent("click_discord", { location: "signup_card", page: "landing" });
     fbqEvent("Contact");
@@ -71,7 +71,7 @@ export default function Home() {
       hp: f.website.value, // honeypot
     };
 
-    // If honeypot is filled, pretend success but do NOT fire analytics
+    // Bot honeypot — pretend success, do not fire analytics
     if (data.hp) {
       setStatus("ok");
       return;
@@ -250,13 +250,15 @@ export default function Home() {
 
       {/* ========================= LORE / SYSTEM COPY ========================= */}
       <section className="mx-auto max-w-[900px] px-5 pb-4">
-        <h2 className="text-2xl md:text-3xl font-semibold">A world that listens — and pushes back.</h2>
+        <h2 className="text-2xl md:text-3xl font-semibold text-[var(--accent)]">
+          A world that listens — and pushes back.
+        </h2>
         <p className="mt-2">
           Describe your intent in your own words. Moonfell resolves outcomes with stats, distance, timing, light and noise,
           and the instincts of every creature in play. The result is simulation first — narrative second.
         </p>
 
-        <h2 className="mt-8 text-2xl md:text-3xl font-semibold">The Rules of Moonfell</h2>
+        <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
           <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
           <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
@@ -292,7 +294,7 @@ export default function Home() {
       </section>
 
       {/* ========================= FAQ ========================= */}
-      <section className="border-top border-white/10">
+      <section className="border-t border-white/10">
         <div className="mx-auto max-w-[900px] px-5 py-12">
           <h2 className="text-2xl md:text-3xl font-semibold mb-4">FAQ</h2>
           <div className="space-y-3">
