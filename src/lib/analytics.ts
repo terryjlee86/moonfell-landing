@@ -19,3 +19,5 @@ export const fbqEvent = (name: string, params?: Record<string, any>) => {
   // @ts-ignore
   window.fbq?.("track", name, params);
 };
+
+
