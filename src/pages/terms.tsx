@@ -2,8 +2,8 @@
 import Head from "next/head";
 
 const COMPANY = "Moonfell";
-const DOMAIN = "https://yourdomain.com";
-const CONTACT_EMAIL = "hello@yourdomain.com";
+const DOMAIN = "https://moonfell.live";
+const CONTACT_EMAIL = "themoonfallen@gmail.com";
 
 export default function Terms() {
   return (
