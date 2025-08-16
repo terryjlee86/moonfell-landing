@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/router";
 import Script from "next/script";
 import { GA_ID, META_PIXEL_ID, gaPageview } from "../lib/analytics";
+const GA_DEBUG = process.env.NEXT_PUBLIC_GA_DEBUG === "true";
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   const router = useRouter();
@@ -30,7 +31,10 @@ export default function MyApp({ Component, pageProps }: AppProps) {
               window.dataLayer = window.dataLayer || [];
               function gtag(){dataLayer.push(arguments);}
               gtag('js', new Date());
-              gtag('config', '${GA_ID}', { send_page_view: true });
+              gtag('config', '${GA_ID}', {
+                send_page_view: true,
+                ${GA_DEBUG ? "debug_mode: true," : ""}
+              });
             `}
           </Script>
         </>
