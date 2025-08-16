@@ -51,12 +51,7 @@ export default function Home() {
   const [err, setErr] = useState<string>("");
   const utm = useUTM();
 
-  // Micro-conversion handlers
-  const handleCtaClick = () => {
-    gaEvent("click_signup_cta", { location: "signup_card", page: "landing" });
-    fbqEvent("Lead");
-  };
-
+  // Discord micro-conversion (kept)
   const handleDiscordClick = () => {
     gaEvent("click_discord", { location: "signup_card", page: "landing" });
     fbqEvent("Contact");
@@ -66,6 +61,7 @@ export default function Home() {
     e.preventDefault();
     setStatus("loading");
     setErr("");
+
     const f = e.currentTarget as any;
     const data = {
       name: f.name.value.trim(),
@@ -74,18 +70,24 @@ export default function Home() {
       utm,
       hp: f.website.value, // honeypot
     };
+
+    // If honeypot is filled, pretend success but do NOT fire analytics
     if (data.hp) {
       setStatus("ok");
       return;
     }
+
     try {
       const r = await fetch("/api/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+
       setStatus(r.ok ? "ok" : "err");
+
       if (r.ok) {
+        // Fire analytics ONLY on real, successful subscription
         gaEvent("signup", { method: "beehiiv" });
         fbqEvent("CompleteRegistration");
       } else {
@@ -135,7 +137,7 @@ export default function Home() {
         {/* Foreground copy pulled upward over the background */}
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
           <div className="max-w-[720px]">
-            {/* LOGO wordmark (left-aligned) — ~3× larger */}
+            {/* LOGO wordmark (left-aligned) — large */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo-moonfell.svg"
@@ -178,7 +180,6 @@ export default function Home() {
                   required
                 />
                 <button
-                  onClick={handleCtaClick}
                   disabled={status === "loading"}
                   className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
                 >
@@ -201,7 +202,7 @@ export default function Home() {
             </form>
           )}
 
-          {/* Discord (permanent invite, themed to brand accent?) */}
+          {/* Discord (permanent invite) */}
           <div className="mt-4">
             <a
               onClick={handleDiscordClick}
@@ -291,7 +292,7 @@ export default function Home() {
       </section>
 
       {/* ========================= FAQ ========================= */}
-      <section className="border-t border-white/10">
+      <section className="border-top border-white/10">
         <div className="mx-auto max-w-[900px] px-5 py-12">
           <h2 className="text-2xl md:text-3xl font-semibold mb-4">FAQ</h2>
           <div className="space-y-3">
