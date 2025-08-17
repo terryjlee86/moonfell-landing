@@ -2,7 +2,7 @@
 //
 // Rolls DM: decides if a player's input should trigger a roll,
 // returning a structured decision + plain-language reason + optional tags.
-// Scope: intent + binary feasibility (must-have capability gates).
+// Scope: intent + binary feasibility (must-have items & known spells).
 // Soft modifiers (e.g., blinded penalties) are NOT handled here.
 
 import fs from "fs";
@@ -109,7 +109,7 @@ function coerceDecision(obj: any): ArbiterDecision | null {
   }
 }
 
-// ---------- binary feasibility helpers (deterministic) ----------
+// ---------- helpers (deterministic, binary) ----------
 const hasTag = (tags: string[], p: string) => tags.some((t) => t === p || t.startsWith(p + ":"));
 const tagValue = (tags: string[], prefix: string): string | undefined =>
   tags.find((t) => t.startsWith(prefix + ":"))?.split(":").slice(1).join(":");
@@ -124,15 +124,53 @@ function wantsRopeUse(message: string) {
   return /\b(tie|tether|secure|lasso|lower\s+.*\bwith\b\s+rope)\b/i.test(message);
 }
 function wantsLightAction(message: string) {
-  // only “light/ignite torch/lantern” is a hard binary; “inspect closely in dark” is NOT binary here
+  // hard binary: "light/ignite torch/lantern"
   return /\b(light|ignite|spark)\b.*\b(torch|lantern)\b/i.test(message);
+}
+function wantsToLeaveDemo(message: string) {
+  // explicit exit/travel attempts only
+  return /\b(leave|exit|travel|go to|head to|make for)\b/i.test(message);
+}
+
+// Extract candidate spell names from message (very lightweight):
+function extractRequestedSpells(message: string): string[] {
+  const m = message.toLowerCase();
+  const found = new Set<string>();
+
+  // Patterns: "cast X", "use X", "conjure X", "invoke X", "X spell"
+  const verbs = "(cast|use|conjure|invoke|unleash|channel|summon)";
+  const afterVerb = new RegExp(`\\b${verbs}\\b\\s+the\\s+([a-z][a-z\\-']{2,24})\\b`, "gi");
+  const afterVerb2 = new RegExp(`\\b${verbs}\\b\\s+([a-z][a-z\\-']{2,24})\\b`, "gi");
+  const xSpell = /\b([a-z][a-z\-']{2,24})\s+spell\b/gi;
+
+  let m1: RegExpExecArray | null;
+  while ((m1 = afterVerb.exec(m))) found.add(m1[1]);
+  while ((m1 = afterVerb2.exec(m))) found.add(m1[1]);
+  while ((m1 = xSpell.exec(m))) found.add(m1[1]);
+
+  // A couple of common aliases people type:
+  if (/\bfire\s*ball\b/i.test(message)) found.add("fireball");
+  if (/\bfirebolt\b/i.test(message)) found.add("firebolt");
+  if (/\bspark\s*light\b/i.test(message)) found.add("sparklight");
+
+  return Array.from(found);
+}
+
+function knowsSpell(learnedTags: string[] | undefined, spellIdLC: string): boolean {
+  if (!learnedTags || learnedTags.length === 0) return false;
+  // learned tags are like "pc:spell:sootheTone" — compare lowercased tail
+  return learnedTags.some((t) => {
+    if (!t.startsWith("pc:spell:")) return false;
+    const tail = t.slice("pc:spell:".length).toLowerCase();
+    return tail === spellIdLC;
+  });
 }
 
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
   const rules = loadRollRules();
   if (!OPENAI_API_KEY) return fallback("Arbiter disabled (no OPENAI_API_KEY)");
 
-  // Merge all tag feeds into one compact list for the model, and for local binary checks.
+  // Merge all tag feeds into one compact list (and for local checks).
   const mergedTags: string[] = [
     ...(input.sceneTags ?? []),
     ...(input.inventoryTags ?? []),
@@ -142,26 +180,24 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   const msg = input.message.trim();
   const msgLC = msg.toLowerCase();
 
-  // ---------- Hard rails from tags ----------
-  if (hasTag(mergedTags, "rail:demo-area-only") && /\b(leave|exit|travel|go to|town|city|forest edge)\b/i.test(msg)) {
-    return { kind: "auto-fail", reason: "Demo boundary: cannot leave the preview area.", tags: ["rail-block"] };
+  // ---------- Rails: fail ONLY on explicit attempts to leave the demo area ----------
+  if (hasTag(mergedTags, "rail:demo-area-only") && wantsToLeaveDemo(msg)) {
+    return { kind: "auto-fail", reason: "Demo boundary: you can’t leave the preview area.", tags: ["rail-block"] };
   }
 
-  // ---------- Binary capability gates (deterministic) ----------
-  // Rope-required patterns → must have pc:rope
+  // ---------- Binary capability gates ----------
+  // Rope-required → must have pc:rope
   if (wantsRopeUse(msg)) {
     if (!hasTag(mergedTags, "pc:rope")) {
       return { kind: "auto-fail", reason: "You have no rope to do that.", tags: ["needs-rope"] };
     }
   }
-
   // Ranged shot → must have pc:ranged
   if (wantsRanged(msg)) {
     if (!hasTag(mergedTags, "pc:ranged")) {
       return { kind: "auto-fail", reason: "No ranged weapon available.", tags: ["needs-ranged-weapon"] };
     }
   }
-
   // Throwing → must have pc:throwable:N with N>0
   if (wantsThrow(msg)) {
     const n = parseInt(tagValue(mergedTags, "pc:throwable") || "0", 10);
@@ -169,8 +205,7 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
       return { kind: "auto-fail", reason: "No throwable items available.", tags: ["needs-throwable"] };
     }
   }
-
-  // Lighting a torch/lantern → must have a light-capable item
+  // Lighting torch/lantern → must have a light-capable item
   if (wantsLightAction(msg)) {
     const lightState = tagValue(mergedTags, "pc:light"); // "lit" | "unlit" | "none"
     if (!lightState || lightState === "none") {
@@ -178,10 +213,22 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
     }
   }
 
-  // NOTE: Soft feasibility like “blinded” does NOT force auto-fail here.
-  // It will be handled later by the skills/dice system as penalties.
+  // ---------- Deterministic "known spell" gate ----------
+  const requestedSpells = extractRequestedSpells(msg);
+  if (requestedSpells.length) {
+    const unknown = requestedSpells.find((s) => !knowsSpell(input.learnedTags, s));
+    if (unknown) {
+      return {
+        kind: "auto-fail",
+        reason: `You do not know the spell '${unknown}'.`,
+        tags: [`needs-spell:${unknown}`],
+      };
+    }
+  }
 
-  // ---------- Heuristic nudge for social influence (same as before) ----------
+  // NOTE: Soft feasibility like “blinded” does NOT cause auto-fail here.
+
+  // ---------- Heuristic nudge for social influence ----------
   const influenceVerbs =
     "(calm|lull|charm|soothe|distract|frighten|intimidate|persuade|lure|mesmerise|mesmerize|confuse|taunt|mislead)";
   const creatureHints = "(creature|goblin|mirefold|beast|guard|lookout|enemy|it|them|him|her)";
@@ -193,18 +240,19 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   const systemPrompt = `
 You are the Rolls DM. Your scope:
 - Classify the action (no-roll, auto-success, auto-fail, fixed, opposed).
-- Enforce binary feasibility gates only (physics/rails/must-have items).
+- Enforce only binary feasibility gates (physics/rails/must-have items/known spells).
 - Do NOT apply soft penalties (e.g., blinded); leave those for the dice/skills system.
+- Do NOT cite demo rails unless the player explicitly attempts to leave the demo area.
 
 Policy (authoritative):
 ${clamp(rules)}
 
 Guidance:
-- If message includes an influence verb (calm, lull, distract, charm, frighten, persuade, lure, mesmerise) AND references a creature/NPC, classify as **opposed** (attackerAbility="CHA", defender="creature") with tag ["social-influence"].
+- If the message includes an influence verb (calm, lull, distract, charm, frighten, persuade, lure, mesmerise) AND references a creature/NPC, classify as **opposed** (attackerAbility="CHA", defender="creature") with tag ["social-influence"].
 - Ambient actions with no intent to influence remain **no-roll** with tag ["ambient-action"].
-- Respect hard rails (e.g., rail:demo-area-only) as **auto-fail** when the player tries to leave the demo area.
-- Use presence/absence signals (pc:ranged, pc:throwable:N, pc:rope, pc:light:lit|unlit|none) to inform feasibility, but only as binary gates when the action explicitly requires them.
-- Soft conditions like pc:blinded, pc:wounded do NOT cause auto-fail here.
+- Respect hard rails only for explicit exit/travel attempts.
+- Presence/absence signals (pc:ranged, pc:throwable:N, pc:rope, pc:light:lit|unlit|none) inform feasibility; use them only as binary gates when the action explicitly requires them.
+- Spells: if a spell is attempted and not known (not in learned tags), the action is **auto-fail** (already enforced deterministically before this step).
 `.trim();
 
   const tools = [
@@ -238,7 +286,7 @@ Guidance:
     character: input.character ?? {},
     hardHint,
     guidance:
-      "Prefer 'no-roll' for pure ambience. Prefer 'opposed' for creature influence attempts. Use auto-fail only for physics/rails/missing must-have item."
+      "Prefer 'no-roll' for pure ambience. Prefer 'opposed' for creature influence attempts. Use auto-fail only for physics/explicit rails/missing must-have item/unknown spell."
   };
 
   try {
