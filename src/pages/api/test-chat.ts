@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import fs from "fs";
 import path from "path";
 import forestAmbush from "../../prompts/scenarios/forest_ambush";
+import { getRollDecision, ArbiterDecision } from "../../services/rolls_dm";
 
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
@@ -105,11 +106,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     systemDoc
   );
 
-  // Optional: dev echo (commented out by default)
-  // if (process.env.NODE_ENV !== "production" && req.body?.echo === true) {
-  //   return res.status(200).json({ promptPreview: SYSTEM_PROMPT.slice(0, 2000) });
-  // }
-
   // Init: send scenario intro without spending tokens
   if (init) {
     return res.status(200).json({
@@ -122,6 +118,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!userMessage) return res.status(400).json({ error: "No message provided" });
 
   const debugMode = userMessage.toLowerCase().includes("debug please");
+
+  // Ask the Rolls DM (stubbed for now). This does NOT affect narration flow.
+  let arbiterDecision: ArbiterDecision | null = null;
+  try {
+    arbiterDecision = await getRollDecision({ message: userMessage });
+  } catch {
+    arbiterDecision = null; // ignore arbiter errors; keep player flow intact
+  }
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -151,7 +155,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const data = JSON.parse(text);
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
-    if (debugMode) reply += `\n\n[dbg: preview mode; internal rolls hidden]`;
+
+    if (debugMode) {
+      // Build a compact arbiter summary line with input, decision, and reason.
+      const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
+      const arb = (() => {
+        if (!arbiterDecision) return "unavailable";
+        switch (arbiterDecision.kind) {
+          case "no-roll":
+            return `no-roll (${arbiterDecision.reason})`;
+          case "auto-success":
+            return `auto-success (${arbiterDecision.reason})`;
+          case "auto-fail":
+            return `auto-fail (${arbiterDecision.reason})`;
+          case "fixed":
+            return `fixed ability=${arbiterDecision.ability} dcHint=${arbiterDecision.dcHint ?? "?"}${
+              arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
+            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}`;
+          case "opposed":
+            return `opposed atk=${arbiterDecision.attackerAbility} vs ${arbiterDecision.defender}${
+              arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
+            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}`;
+          default:
+            return "unknown";
+        }
+      })();
+
+      reply += `\n\n[arb: input="${preview}" | ${arb}]`;
+      reply += `\n[dbg: preview mode; internal rolls hidden]`;
+    }
 
     return res.status(200).json({ reply, scenario: scenario.id });
   } catch (e: any) {
