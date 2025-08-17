@@ -1,9 +1,8 @@
 // src/services/rolls_dm.ts
 //
-// Rolls DM: decides if a player's input should trigger a roll,
-// returning a structured decision + plain-language reason + optional tags.
-// Scope: intent + binary feasibility (must-have items & known spells).
-// Soft modifiers (e.g., blinded penalties) are NOT handled here.
+// Rolls DM: classifies player input and enforces binary feasibility.
+// Distinguishes specific ranged capability (bow/crossbow) from throwables.
+// Unknown spells and rails are handled deterministically; soft penalties are deferred.
 
 import fs from "fs";
 import path from "path";
@@ -12,14 +11,14 @@ export type ArbiterInputCharacter = {
   name?: string;
   stance?: "neutral" | "braced" | "sprinting" | string;
   stats?: { STR?: number; AGI?: number; END?: number; INT?: number; WIL?: number; CHA?: number };
-  activeConditions?: string[]; // e.g., ["wounded","blinded"]
+  activeConditions?: string[];
 };
 
 export type ArbiterInput = {
   message: string;
-  sceneTags?: string[];          // e.g., ["rail:demo-area-only","creature:mirefold:wary:6m"]
-  inventoryTags?: string[];      // e.g., ["pc:shield","pc:ranged","pc:light:unlit","pc:rope","pc:throwable:1"]
-  learnedTags?: string[];        // e.g., ["pc:skill:stealth","pc:spell:sootheTone"]
+  sceneTags?: string[];
+  inventoryTags?: string[];
+  learnedTags?: string[];
   character?: ArbiterInputCharacter;
 };
 
@@ -27,22 +26,8 @@ export type ArbiterDecision =
   | { kind: "no-roll"; reason: string; tags?: string[] }
   | { kind: "auto-success"; reason: string; tags?: string[] }
   | { kind: "auto-fail"; reason: string; tags?: string[] }
-  | {
-      kind: "fixed";
-      ability: string;
-      dcHint?: string;
-      context?: string;
-      reason?: string;
-      tags?: string[];
-    }
-  | {
-      kind: "opposed";
-      attackerAbility: string;
-      defender: string;
-      context?: string;
-      reason?: string;
-      tags?: string[];
-    };
+  | { kind: "fixed"; ability: string; dcHint?: string; context?: string; reason?: string; tags?: string[] }
+  | { kind: "opposed"; attackerAbility: string; defender: string; context?: string; reason?: string; tags?: string[] };
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -50,62 +35,32 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 // ---------- utils ----------
 function loadRollRules(): string {
   try {
-    return fs.readFileSync(
-      path.join(process.cwd(), "src", "prompts", "rolls", "rolls_rules.md"),
-      "utf8"
-    );
+    return fs.readFileSync(path.join(process.cwd(), "src", "prompts", "rolls", "rolls_rules.md"), "utf8");
   } catch {
     return "[No rolls_rules.md found]";
   }
 }
-
-function clamp(text: string, max = 6000) {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "\n\n...[trimmed]..." : text;
-}
-
-function fallback(reason: string): ArbiterDecision {
-  return { kind: "no-roll", reason, tags: ["arbiter-fallback"] };
-}
+function clamp(text: string, max = 6000) { return !text ? "" : text.length > max ? text.slice(0, max) + "\n\n...[trimmed]..." : text; }
+function fallback(reason: string): ArbiterDecision { return { kind: "no-roll", reason, tags: ["arbiter-fallback"] }; }
 
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object" || typeof obj.kind !== "string") return null;
   const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
-
   switch (obj.kind) {
     case "no-roll":
     case "auto-success":
     case "auto-fail":
-      if (typeof obj.reason === "string" && obj.reason.length > 0) {
-        return { kind: obj.kind, reason: obj.reason, tags };
-      }
+      if (typeof obj.reason === "string" && obj.reason.length > 0) return { kind: obj.kind, reason: obj.reason, tags };
       return null;
     case "fixed":
-      if (typeof obj.ability === "string") {
-        return {
-          kind: "fixed",
-          ability: obj.ability,
-          dcHint: typeof obj.dcHint === "string" ? obj.dcHint : undefined,
-          context: typeof obj.context === "string" ? obj.context : undefined,
-          reason: typeof obj.reason === "string" ? obj.reason : undefined,
-          tags,
-        };
-      }
+      if (typeof obj.ability === "string")
+        return { kind: "fixed", ability: obj.ability, dcHint: typeof obj.dcHint === "string" ? obj.dcHint : undefined, context: typeof obj.context === "string" ? obj.context : undefined, reason: typeof obj.reason === "string" ? obj.reason : undefined, tags };
       return null;
     case "opposed":
-      if (typeof obj.attackerAbility === "string" && typeof obj.defender === "string") {
-        return {
-          kind: "opposed",
-          attackerAbility: obj.attackerAbility,
-          defender: obj.defender,
-          context: typeof obj.context === "string" ? obj.context : undefined,
-          reason: typeof obj.reason === "string" ? obj.reason : undefined,
-          tags,
-        };
-      }
+      if (typeof obj.attackerAbility === "string" && typeof obj.defender === "string")
+        return { kind: "opposed", attackerAbility: obj.attackerAbility, defender: obj.defender, context: typeof obj.context === "string" ? obj.context : undefined, reason: typeof obj.reason === "string" ? obj.reason : undefined, tags };
       return null;
-    default:
-      return null;
+    default: return null;
   }
 }
 
@@ -114,68 +69,46 @@ const hasTag = (tags: string[], p: string) => tags.some((t) => t === p || t.star
 const tagValue = (tags: string[], prefix: string): string | undefined =>
   tags.find((t) => t.startsWith(prefix + ":"))?.split(":").slice(1).join(":");
 
-function wantsRanged(message: string) {
-  return /\b(shoot|nock|loose|fire|arrow|bow|crossbow)\b/i.test(message);
-}
-function wantsThrow(message: string) {
-  return /\b(throw|toss|hurl|lob)\b/i.test(message);
-}
-function wantsRopeUse(message: string) {
-  return /\b(tie|tether|secure|lasso|lower\s+.*\bwith\b\s+rope)\b/i.test(message);
-}
-function wantsLightAction(message: string) {
-  // hard binary: "light/ignite torch/lantern"
-  return /\b(light|ignite|spark)\b.*\b(torch|lantern)\b/i.test(message);
-}
-function wantsToLeaveDemo(message: string) {
-  // explicit exit/travel attempts only
-  return /\b(leave|exit|travel|go to|head to|make for)\b/i.test(message);
-}
+// intents
+function wantsRanged(message: string) { return /\b(shoot|nock|loose|fire)\b/i.test(message); }
+function mentionsBow(message: string)  { return /\b(bow|arrow|nock|loose)\b/i.test(message); }
+function wantsThrow(message: string)   { return /\b(throw|toss|hurl|lob)\b/i.test(message); }
+function mentionsThrowingAxe(message: string) { return /\b(throwing\s*axe|hand\s*axe)\b/i.test(message); }
+function wantsRopeUse(message: string){ return /\b(tie|tether|secure|lasso|lower\s+.*\bwith\b\s+rope)\b/i.test(message); }
+function wantsLightAction(message: string) { return /\b(light|ignite|spark)\b.*\b(torch|lantern)\b/i.test(message); }
+function wantsToLeaveDemo(message: string) { return /\b(leave|exit|travel|go to|head to|make for)\b/i.test(message); }
 
-// Extract candidate spell names from message (very lightweight):
+// spells
 function extractRequestedSpells(message: string): string[] {
   const m = message.toLowerCase();
   const found = new Set<string>();
-
-  // Patterns: "cast X", "use X", "conjure X", "invoke X", "X spell"
   const verbs = "(cast|use|conjure|invoke|unleash|channel|summon)";
   const afterVerb = new RegExp(`\\b${verbs}\\b\\s+the\\s+([a-z][a-z\\-']{2,24})\\b`, "gi");
   const afterVerb2 = new RegExp(`\\b${verbs}\\b\\s+([a-z][a-z\\-']{2,24})\\b`, "gi");
   const xSpell = /\b([a-z][a-z\-']{2,24})\s+spell\b/gi;
-
   let m1: RegExpExecArray | null;
   while ((m1 = afterVerb.exec(m))) found.add(m1[1]);
   while ((m1 = afterVerb2.exec(m))) found.add(m1[1]);
   while ((m1 = xSpell.exec(m))) found.add(m1[1]);
-
-  // A couple of common aliases people type:
   if (/\bfire\s*ball\b/i.test(message)) found.add("fireball");
   if (/\bfirebolt\b/i.test(message)) found.add("firebolt");
   if (/\bspark\s*light\b/i.test(message)) found.add("sparklight");
-
   return Array.from(found);
 }
-
 function knowsSpell(learnedTags: string[] | undefined, spellIdLC: string): boolean {
   if (!learnedTags || learnedTags.length === 0) return false;
-  // learned tags are like "pc:spell:sootheTone" — compare lowercased tail
-  return learnedTags.some((t) => {
-    if (!t.startsWith("pc:spell:")) return false;
-    const tail = t.slice("pc:spell:".length).toLowerCase();
-    return tail === spellIdLC;
-  });
+  return learnedTags.some((t) => t.startsWith("pc:spell:") && t.slice("pc:spell:".length).toLowerCase() === spellIdLC);
 }
 
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
   const rules = loadRollRules();
   if (!OPENAI_API_KEY) return fallback("Arbiter disabled (no OPENAI_API_KEY)");
 
-  // Merge all tag feeds into one compact list (and for local checks).
   const mergedTags: string[] = [
     ...(input.sceneTags ?? []),
     ...(input.inventoryTags ?? []),
     ...(input.learnedTags ?? []),
-  ].slice(0, 120);
+  ].slice(0, 160);
 
   const msg = input.message.trim();
   const msgLC = msg.toLowerCase();
@@ -186,31 +119,68 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   }
 
   // ---------- Binary capability gates ----------
-  // Rope-required → must have pc:rope
+  let binaryFailed = false;
+  const prereq: { rangedOK?: boolean; bowOK?: boolean; crossbowOK?: boolean; throwOK?: boolean; ropeOK?: boolean; lightCapOK?: boolean } = {};
+
+  const hasBow = hasTag(mergedTags, "pc:bow");
+  const hasCrossbow = hasTag(mergedTags, "pc:crossbow");
+  const throwingAxes = parseInt(tagValue(mergedTags, "pc:throwing-axe") || "0", 10);
+  const totalThrowable = parseInt(tagValue(mergedTags, "pc:throwable") || "0", 10);
+
+  // Rope
   if (wantsRopeUse(msg)) {
     if (!hasTag(mergedTags, "pc:rope")) {
+      binaryFailed = true;
       return { kind: "auto-fail", reason: "You have no rope to do that.", tags: ["needs-rope"] };
     }
+    prereq.ropeOK = true;
   }
-  // Ranged shot → must have pc:ranged
-  if (wantsRanged(msg)) {
-    if (!hasTag(mergedTags, "pc:ranged")) {
-      return { kind: "auto-fail", reason: "No ranged weapon available.", tags: ["needs-ranged-weapon"] };
+
+  // Bow-specific intent → must have bow OR crossbow
+  if (mentionsBow(msg)) {
+    if (!hasBow && !hasCrossbow) {
+      binaryFailed = true;
+      return { kind: "auto-fail", reason: "You don’t have a bow or crossbow.", tags: ["needs-bow"] };
     }
+    prereq.bowOK = hasBow || hasCrossbow;
   }
-  // Throwing → must have pc:throwable:N with N>0
-  if (wantsThrow(msg)) {
-    const n = parseInt(tagValue(mergedTags, "pc:throwable") || "0", 10);
-    if (!n || n <= 0) {
+
+  // Generic ranged verb "shoot" (without saying bow)
+  const rangedIntent = wantsRanged(msg);
+  if (rangedIntent && !mentionsBow(msg)) {
+    // If no bow/crossbow but throwable exists, don't fail; allow model to classify (could suggest throw).
+    // If no ranged capability at all (no bow/crossbow and no throwable), auto-fail.
+    if (!hasBow && !hasCrossbow && totalThrowable <= 0) {
+      binaryFailed = true;
+      return { kind: "auto-fail", reason: "No ranged option available.", tags: ["needs-ranged-weapon"] };
+    }
+    // mark ranged prerequisite as OK if any ranged option exists
+    prereq.rangedOK = hasBow || hasCrossbow || totalThrowable > 0;
+  }
+
+  // Throwing intent → must have throwable items (prefer specific: throwing-axe)
+  const throwIntent = wantsThrow(msg);
+  if (throwIntent) {
+    if (mentionsThrowingAxe(msg) && throwingAxes <= 0) {
+      binaryFailed = true;
+      return { kind: "auto-fail", reason: "No throwing axes available.", tags: ["needs-throwing-axe"] };
+    }
+    if (totalThrowable <= 0) {
+      binaryFailed = true;
       return { kind: "auto-fail", reason: "No throwable items available.", tags: ["needs-throwable"] };
     }
+    prereq.throwOK = true;
   }
-  // Lighting torch/lantern → must have a light-capable item
-  if (wantsLightAction(msg)) {
+
+  // Lighting torch/lantern
+  const lightIntent = wantsLightAction(msg);
+  if (lightIntent) {
     const lightState = tagValue(mergedTags, "pc:light"); // "lit" | "unlit" | "none"
     if (!lightState || lightState === "none") {
+      binaryFailed = true;
       return { kind: "auto-fail", reason: "No torch or lantern to light.", tags: ["needs-light-source"] };
     }
+    prereq.lightCapOK = true;
   }
 
   // ---------- Deterministic "known spell" gate ----------
@@ -218,6 +188,7 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   if (requestedSpells.length) {
     const unknown = requestedSpells.find((s) => !knowsSpell(input.learnedTags, s));
     if (unknown) {
+      binaryFailed = true;
       return {
         kind: "auto-fail",
         reason: `You do not know the spell '${unknown}'.`,
@@ -225,8 +196,6 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
       };
     }
   }
-
-  // NOTE: Soft feasibility like “blinded” does NOT cause auto-fail here.
 
   // ---------- Heuristic nudge for social influence ----------
   const influenceVerbs =
@@ -240,7 +209,7 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   const systemPrompt = `
 You are the Rolls DM. Your scope:
 - Classify the action (no-roll, auto-success, auto-fail, fixed, opposed).
-- Enforce only binary feasibility gates (physics/rails/must-have items/known spells).
+- Enforce binary feasibility gates (physics/explicit rails/must-have items/known spells/specific weapon requirements).
 - Do NOT apply soft penalties (e.g., blinded); leave those for the dice/skills system.
 - Do NOT cite demo rails unless the player explicitly attempts to leave the demo area.
 
@@ -250,9 +219,8 @@ ${clamp(rules)}
 Guidance:
 - If the message includes an influence verb (calm, lull, distract, charm, frighten, persuade, lure, mesmerise) AND references a creature/NPC, classify as **opposed** (attackerAbility="CHA", defender="creature") with tag ["social-influence"].
 - Ambient actions with no intent to influence remain **no-roll** with tag ["ambient-action"].
-- Respect hard rails only for explicit exit/travel attempts.
-- Presence/absence signals (pc:ranged, pc:throwable:N, pc:rope, pc:light:lit|unlit|none) inform feasibility; use them only as binary gates when the action explicitly requires them.
-- Spells: if a spell is attempted and not known (not in learned tags), the action is **auto-fail** (already enforced deterministically before this step).
+- Ranged specificity matters: “shoot with my bow” requires pc:bow or pc:crossbow. Throwing requires pc:throwable:N (and ideally a specific item like pc:throwing-axe:N).
+- Spells: attempting an unknown spell is **auto-fail** (already enforced deterministically before this step).
 `.trim();
 
   const tools = [
@@ -286,7 +254,15 @@ Guidance:
     character: input.character ?? {},
     hardHint,
     guidance:
-      "Prefer 'no-roll' for pure ambience. Prefer 'opposed' for creature influence attempts. Use auto-fail only for physics/explicit rails/missing must-have item/unknown spell."
+      "Prefer 'no-roll' for pure ambience. Prefer 'opposed' for creature influence attempts. Use auto-fail only for physics/explicit rails/missing specific required item/unknown spell."
+  };
+
+  const guard = {
+    binaryFailed,
+    rangedIntentAllowed:
+      (mentionsBow(msg) && (hasBow || hasCrossbow)) ||
+      (wantsRanged(msg) && (hasBow || hasCrossbow || totalThrowable > 0)),
+    throwIntentAllowed: wantsThrow(msg) && totalThrowable > 0,
   };
 
   try {
@@ -319,8 +295,43 @@ Guidance:
     try { args = JSON.parse(first.function.arguments || "{}"); }
     catch { return fallback("Arbiter fallback (bad tool args)"); }
 
-    const decision = coerceDecision(args);
-    return decision ?? fallback("Arbiter fallback (schema mismatch)");
+    let decision = coerceDecision(args) ?? fallback("Arbiter fallback (schema mismatch)");
+
+    // ---------- Post-LLM sanity guard ----------
+    if (!guard.binaryFailed && decision.kind === "auto-fail") {
+      const reasonLC = (decision as any).reason?.toLowerCase() || "";
+
+      // If ranged is clearly intended and prerequisites exist, override bogus auto-fail.
+      if (guard.rangedIntentAllowed) {
+        decision = {
+          kind: "fixed",
+          ability: "AGI",
+          reason: "Ranged action with prerequisites present; resolve with a roll.",
+          tags: ["ranged-attack", "guard:override-auto-fail"].concat(decision.tags || []),
+        };
+      } else if (guard.throwIntentAllowed) {
+        decision = {
+          kind: "fixed",
+          ability: "AGI",
+          reason: "Throwing action with prerequisites present; resolve with a roll.",
+          tags: ["throw-attack", "guard:override-auto-fail"].concat(decision.tags || []),
+        };
+      } else if (/demo|rail/.test(reasonLC) && !wantsToLeaveDemo(msg)) {
+        // If model cited rails spuriously, but the user didn't try to leave, normalize.
+        if (/\b(attack|strike|grab|climb|jump|push|pull|shoot|throw|tie|light|ignite)\b/i.test(msg)) {
+          decision = {
+            kind: "fixed",
+            ability: "AGI",
+            reason: "Action permitted within demo area; resolve with a roll.",
+            tags: ["guard:strip-spurious-rail"].concat(decision.tags || []),
+          };
+        } else {
+          decision = { kind: "no-roll", reason: "Ambient within demo area.", tags: ["guard:strip-spurious-rail"].concat(decision.tags || []) };
+        }
+      }
+    }
+
+    return decision;
   } catch {
     return fallback("Arbiter fallback (request failed)");
   }
