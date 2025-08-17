@@ -74,12 +74,13 @@ ${enc || "[No encounter doc]"}
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { passcode, init, message, history = [], scenarioId } = (req.body || {}) as {
+  const { passcode, init, message, history = [], scenarioId, debug } = (req.body || {}) as {
     passcode?: string;
     init?: boolean;
     message?: string;
     history?: Turn[];
     scenarioId?: string;
+    debug?: boolean; // <— frontend toggle
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
@@ -117,7 +118,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const userMessage = (message || "").trim();
   if (!userMessage) return res.status(400).json({ error: "No message provided" });
 
-  const debugMode = userMessage.toLowerCase().includes("debug please");
+  // Debug is controlled by frontend flag; keep legacy phrase as a fallback
+  const debugMode = Boolean(debug) || userMessage.toLowerCase().includes("debug please");
 
   // Call the Rolls DM (sidecar-only; does NOT affect narration flow)
   let arbiterDecision: ArbiterDecision | null = null;
