@@ -121,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Debug is controlled by frontend flag; keep legacy phrase as a fallback
   const debugMode = Boolean(debug) || userMessage.toLowerCase().includes("debug please");
 
-  // Call the Rolls DM (sidecar-only; does NOT affect narration flow)
+  // Sidecar: call Rolls DM (does NOT affect narration flow)
   let arbiterDecision: ArbiterDecision | null = null;
   try {
     arbiterDecision = await getRollDecision({ message: userMessage });
