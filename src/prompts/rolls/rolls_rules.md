@@ -35,10 +35,12 @@ Direct contests against creatures or resisting agents.
 
 ---
 
-## Social / Mental Influence (Always Consider a Roll)
-Any attempt to alter a creature/NPC’s **behaviour, mood, attention, or intent** (calm, lull, distract, intimidate, persuade) **requires a check**.
+## Social / Mental Influence (Roll REQUIRED if intent stated)
+Any attempt to alter a creature/NPC’s **behaviour, mood, attention, or intent** (calm, lull, distract, charm, soothe, frighten, intimidate, persuade, lure, mesmerise, confuse, taunt, mislead) **requires a check**.
 - Default **CHA**; allow **WIL/INT** when fictionally appropriate (prayer/ritual, tactical feint).
-- Use **Opposed** vs **creature** when target resists; use **Fixed DC** if resistance is ambient/low.
+- Use **Opposed** vs **creature** when a target resists; **Fixed DC** if resistance is ambient/low.
+
+> **Intent heuristic (strict):** If the player’s text includes a verb of influence (e.g., *calm, lull, distract, frighten, charm, persuade, lure, mesmerise*) **and** references a creature/NPC (explicitly or by pronoun/description), classify as **Roll Required** (usually **opposed**, attackerAbility=CHA, defender=creature). Do **not** treat as ambient.
 
 ---
 
@@ -48,6 +50,15 @@ Any attempt to alter a creature/NPC’s **behaviour, mood, attention, or intent*
 - **Influence attempts** that aim to change a creature/NPC = **Roll required**.  
   Tag as `["social-influence"]`.
 - When ambiguous, classify as **ambient** (do not assume influence intent).
+
+---
+
+## Examples (authoritative)
+- “sing a tune” → **No Roll**, tags `["ambient-action"]`.
+- “sing a tune **to lull the creature**” → **Opposed**, `atk=CHA vs creature`, tags `["social-influence"]`.
+- “whisper a prayer to steady my nerves” → **Fixed** (WIL), tags `["self-bolster"]`.
+- “shove the goblin” → **Opposed** (STR vs creature).
+- “sneak past the lookout” → **Opposed** (AGI vs perception).
 
 ---
 

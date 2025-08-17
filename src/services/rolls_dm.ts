@@ -16,8 +16,22 @@ export type ArbiterDecision =
   | { kind: "no-roll"; reason: string; tags?: string[] }
   | { kind: "auto-success"; reason: string; tags?: string[] }
   | { kind: "auto-fail"; reason: string; tags?: string[] }
-  | { kind: "fixed"; ability: string; dcHint?: string; context?: string; reason?: string; tags?: string[] }
-  | { kind: "opposed"; attackerAbility: string; defender: string; context?: string; reason?: string; tags?: string[] };
+  | {
+      kind: "fixed";
+      ability: string;
+      dcHint?: string;
+      context?: string;
+      reason?: string;
+      tags?: string[];
+    }
+  | {
+      kind: "opposed";
+      attackerAbility: string;
+      defender: string;
+      context?: string;
+      reason?: string;
+      tags?: string[];
+    };
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -44,7 +58,9 @@ function fallback(reason: string): ArbiterDecision {
 
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object" || typeof obj.kind !== "string") return null;
-  const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
+  const tags = Array.isArray(obj.tags)
+    ? obj.tags.filter((t: any) => typeof t === "string")
+    : undefined;
 
   switch (obj.kind) {
     case "no-roll":
@@ -90,6 +106,17 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   const rules = loadRollRules();
   if (!OPENAI_API_KEY) return fallback("Arbiter disabled (no OPENAI_API_KEY)");
 
+  // Heuristic nudge: if explicit influence verbs appear with a creature reference, prefer opposed CHA vs creature.
+  const influenceVerbs =
+    "(calm|lull|charm|soothe|distract|frighten|intimidate|persuade|lure|mesmerise|mesmerize|confuse|taunt|mislead)";
+  const creatureHints =
+    "(creature|goblin|mirefold|beast|guard|lookout|enemy|it|them|him|her)";
+
+  const messageLC = input.message.toLowerCase();
+  const hardHint =
+    new RegExp(`\\b${influenceVerbs}\\b`).test(messageLC) &&
+    new RegExp(`\\b${creatureHints}\\b`).test(messageLC);
+
   const systemPrompt = `
 You are the Rolls DM for a text-first RPG. Your ONLY job:
 1) Read the player's latest message.
@@ -98,9 +125,15 @@ You are the Rolls DM for a text-first RPG. Your ONLY job:
 
 Policy (authoritative):
 ${clamp(rules)}
+
+Strict heuristics (use BEFORE fallback-to-ambient):
+- If the text includes a verb of influence (e.g., calm, lull, distract, charm, frighten, persuade, lure, mesmerise)
+  AND it refers to a creature/NPC (explicitly or by pronoun/description),
+  THEN classify as a **Roll Required** (usually kind="opposed", attackerAbility="CHA", defender="creature"),
+  tag=["social-influence"].
+- Only treat as ambient when NO intent to influence is stated or implied.
 `.trim();
 
-  // Function schema (tools)
   const tools = [
     {
       type: "function",
@@ -121,7 +154,8 @@ ${clamp(rules)}
             },
             tags: {
               type: "array",
-              description: "Optional classification tags, e.g. ['ambient-action'] or ['social-influence'].",
+              description:
+                "Optional classification tags, e.g. ['ambient-action'] or ['social-influence'].",
               items: { type: "string" },
               nullable: true,
             },
@@ -164,8 +198,10 @@ ${clamp(rules)}
   const userPayload = {
     message: input.message,
     sceneTags: input.sceneTags ?? [],
-    // small hint to prefer tagging
-    guidance: "When ambiguous between ambience and influence, prefer 'no-roll' and tag as ['ambient-action']."
+    // hard nudges to avoid misclassifying intentful influence as ambient
+    hardHint,
+    guidance:
+      "When ambiguous between ambience and influence, prefer 'no-roll' with tags=['ambient-action']. IF influence verb + creature reference, prefer opposed CHA vs creature with tags=['social-influence']."
   };
 
   try {
@@ -178,7 +214,7 @@ ${clamp(rules)}
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
-        max_tokens: 200,
+        max_tokens: 220,
         tools,
         tool_choice: { type: "function", function: { name: "decide_roll" } },
         messages: [
