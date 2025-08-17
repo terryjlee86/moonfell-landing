@@ -1,19 +1,15 @@
 // src/services/rolls_dm.ts
 //
-// Purpose: Ask an LLM ("Rolls DM") to decide if the player's input
-// should trigger a roll, and if so what type—using rolls_rules.md as
-// the authoritative policy. Returns a small JSON decision for debug.
-//
-// This does NOT change narration flow; your handler only uses it to
-// append a [arb: ...] debug line when the user types "debug please".
+// Rolls DM: decides if a player's input should trigger a roll,
+// returning a structured JSON decision + plain-language reason.
+// Uses OpenAI function-calling so the result is guaranteed JSON.
 
 import fs from "fs";
 import path from "path";
 
-// ---------- Types ----------
 export type ArbiterInput = {
-  message: string;          // raw player text
-  sceneTags?: string[];     // optional scene context
+  message: string;
+  sceneTags?: string[];
 };
 
 export type ArbiterDecision =
@@ -23,16 +19,10 @@ export type ArbiterDecision =
   | { kind: "fixed"; ability: string; dcHint?: string; context?: string; reason?: string }
   | { kind: "opposed"; attackerAbility: string; defender: string; context?: string; reason?: string };
 
-// ---------- Config ----------
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-// You can override model just for the arbiter via OPENAI_ROLLS_MODEL.
-// Otherwise it falls back to OPENAI_MODEL or gpt-4o-mini.
-const ROLLS_MODEL =
-  process.env.OPENAI_ROLLS_MODEL ||
-  process.env.OPENAI_MODEL ||
-  "gpt-4o-mini";
+const MODEL =
+  process.env.OPENAI_MODEL || "gpt-4o-mini"; // uses the same model you already configured
 
-// ---------- Load Rules ----------
 function loadRollRules(): string {
   try {
     return fs.readFileSync(
@@ -44,8 +34,7 @@ function loadRollRules(): string {
   }
 }
 
-// ---------- Helpers ----------
-function clamp(text: string, max = 8000) {
+function clamp(text: string, max = 6000) {
   if (!text) return "";
   return text.length > max ? text.slice(0, max) + "\n\n...[trimmed]..." : text;
 }
@@ -93,7 +82,6 @@ function coerceDecision(obj: any): ArbiterDecision | null {
   }
 }
 
-// ---------- Arbiter (LLM) ----------
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
   const rules = loadRollRules();
   if (!OPENAI_API_KEY) return fallback("Arbiter disabled (no OPENAI_API_KEY)");
@@ -101,21 +89,67 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   const systemPrompt = `
 You are the Rolls DM for a text-first RPG. Your ONLY job:
 1) Read the player's latest message.
-2) Decide if it requires a dice roll based on the policy below.
-3) Return a SINGLE JSON object exactly matching the schema.
+2) Decide if it requires a dice roll using the policy below.
+3) Return a single function call with the decision.
 
 Policy (authoritative):
-${clamp(rules, 6000)}
-
-Rules of output:
-- Output MUST be valid JSON (no extra text).
-- Choose exactly one of these kinds:
-  "no-roll", "auto-success", "auto-fail", "fixed", "opposed".
-- Always include a concise natural-language "reason".
-- For "fixed": include "ability" (STR|AGI|END|INT|WIL|CHA), optional "dcHint" ("easy"|"standard"|"hard"|"heroic"), and optional "context".
-- For "opposed": include "attackerAbility" (STR|AGI|END|INT|WIL|CHA), "defender" ("creature"|"environment"|"player"), and optional "context".
-- Do NOT reveal numbers, DCs, or dice in the reason.
+${clamp(rules)}
 `.trim();
+
+  // Define a single tool/function with a strict JSON schema
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: "decide_roll",
+        description: "Return the roll decision for the player's input.",
+        parameters: {
+          type: "object",
+          properties: {
+            kind: {
+              type: "string",
+              enum: ["no-roll", "auto-success", "auto-fail", "fixed", "opposed"],
+              description: "Exactly one decision type.",
+            },
+            reason: {
+              type: "string",
+              description: "Short natural-language explanation for the decision.",
+            },
+            // fixed-only
+            ability: {
+              type: "string",
+              enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"],
+              description: "For kind=fixed: the primary ability used.",
+            },
+            dcHint: {
+              type: "string",
+              enum: ["easy", "standard", "hard", "heroic"],
+              description: "For kind=fixed: optional difficulty hint.",
+              nullable: true,
+            },
+            context: {
+              type: "string",
+              description: "Optional short context string.",
+              nullable: true,
+            },
+            // opposed-only
+            attackerAbility: {
+              type: "string",
+              enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"],
+              description: "For kind=opposed: the player's primary ability.",
+            },
+            defender: {
+              type: "string",
+              enum: ["creature", "environment", "player"],
+              description: "For kind=opposed: what opposes the player.",
+            },
+          },
+          required: ["kind", "reason"],
+          additionalProperties: false,
+        },
+      },
+    },
+  ];
 
   const userPayload = {
     message: input.message,
@@ -130,17 +164,17 @@ Rules of output:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: ROLLS_MODEL,
+        model: MODEL,
         temperature: 0.2,
         max_tokens: 200,
-        // Ask for strict JSON; newer models support this.
-        response_format: { type: "json_object" },
+        tools,
+        tool_choice: { type: "function", function: { name: "decide_roll" } }, // force a function call
         messages: [
           { role: "system", content: systemPrompt },
           {
             role: "user",
             content:
-              "Return only JSON. Schema: ArbiterDecision.\n" +
+              "Decide roll strictly via the policy. Respond ONLY by calling decide_roll with appropriate fields.\n" +
               JSON.stringify(userPayload),
           },
         ],
@@ -152,23 +186,26 @@ Rules of output:
       return fallback(`Arbiter error (${r.status})`);
     }
 
-    // Expecting a JSON object in choices[0].message.content
     const data = JSON.parse(text);
-    const content = data?.choices?.[0]?.message?.content ?? "";
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      // If the model ignored response_format, try to salvage by slicing braces
-      const start = content.indexOf("{");
-      const end = content.lastIndexOf("}");
-      if (start >= 0 && end > start) {
-        parsed = JSON.parse(content.slice(start, end + 1));
-      }
+    const toolCalls = data?.choices?.[0]?.message?.tool_calls;
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
+      return fallback("Arbiter fallback (no tool call)");
     }
 
-    const decision = coerceDecision(parsed);
-    return decision ?? fallback("Arbiter fallback (unparseable result)");
+    const first = toolCalls[0];
+    if (first?.function?.name !== "decide_roll") {
+      return fallback("Arbiter fallback (wrong tool)");
+    }
+
+    let args: any = {};
+    try {
+      args = JSON.parse(first.function.arguments || "{}");
+    } catch {
+      return fallback("Arbiter fallback (bad tool args)");
+    }
+
+    const decision = coerceDecision(args);
+    return decision ?? fallback("Arbiter fallback (schema mismatch)");
   } catch {
     return fallback("Arbiter fallback (request failed)");
   }
