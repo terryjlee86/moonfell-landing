@@ -80,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     message?: string;
     history?: Turn[];
     scenarioId?: string;
-    debug?: boolean; // <— frontend toggle
+    debug?: boolean; // frontend toggle
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
