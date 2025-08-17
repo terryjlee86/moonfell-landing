@@ -1,8 +1,8 @@
 // src/services/rolls_dm.ts
 //
 // Rolls DM: decides if a player's input should trigger a roll,
-// returning a structured JSON decision + plain-language reason.
-// Uses OpenAI function-calling so the result is guaranteed JSON.
+// returning a structured decision + plain-language reason + optional tags.
+// Uses OpenAI function-calling to force structured output.
 
 import fs from "fs";
 import path from "path";
@@ -13,15 +13,14 @@ export type ArbiterInput = {
 };
 
 export type ArbiterDecision =
-  | { kind: "no-roll"; reason: string }
-  | { kind: "auto-success"; reason: string }
-  | { kind: "auto-fail"; reason: string }
-  | { kind: "fixed"; ability: string; dcHint?: string; context?: string; reason?: string }
-  | { kind: "opposed"; attackerAbility: string; defender: string; context?: string; reason?: string };
+  | { kind: "no-roll"; reason: string; tags?: string[] }
+  | { kind: "auto-success"; reason: string; tags?: string[] }
+  | { kind: "auto-fail"; reason: string; tags?: string[] }
+  | { kind: "fixed"; ability: string; dcHint?: string; context?: string; reason?: string; tags?: string[] }
+  | { kind: "opposed"; attackerAbility: string; defender: string; context?: string; reason?: string; tags?: string[] };
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const MODEL =
-  process.env.OPENAI_MODEL || "gpt-4o-mini"; // uses the same model you already configured
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 function loadRollRules(): string {
   try {
@@ -40,20 +39,23 @@ function clamp(text: string, max = 6000) {
 }
 
 function fallback(reason: string): ArbiterDecision {
-  return { kind: "no-roll", reason };
+  return { kind: "no-roll", reason, tags: ["arbiter-fallback"] };
 }
 
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object" || typeof obj.kind !== "string") return null;
+  const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
 
   switch (obj.kind) {
     case "no-roll":
     case "auto-success":
-    case "auto-fail":
-      if (typeof obj.reason === "string" && obj.reason.length > 0) return obj as ArbiterDecision;
+    case "auto-fail": {
+      if (typeof obj.reason === "string" && obj.reason.length > 0) {
+        return { kind: obj.kind, reason: obj.reason, tags };
+      }
       return null;
-
-    case "fixed":
+    }
+    case "fixed": {
       if (typeof obj.ability === "string") {
         return {
           kind: "fixed",
@@ -61,11 +63,12 @@ function coerceDecision(obj: any): ArbiterDecision | null {
           dcHint: typeof obj.dcHint === "string" ? obj.dcHint : undefined,
           context: typeof obj.context === "string" ? obj.context : undefined,
           reason: typeof obj.reason === "string" ? obj.reason : undefined,
+          tags,
         };
       }
       return null;
-
-    case "opposed":
+    }
+    case "opposed": {
       if (typeof obj.attackerAbility === "string" && typeof obj.defender === "string") {
         return {
           kind: "opposed",
@@ -73,10 +76,11 @@ function coerceDecision(obj: any): ArbiterDecision | null {
           defender: obj.defender,
           context: typeof obj.context === "string" ? obj.context : undefined,
           reason: typeof obj.reason === "string" ? obj.reason : undefined,
+          tags,
         };
       }
       return null;
-
+    }
     default:
       return null;
   }
@@ -90,13 +94,13 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
 You are the Rolls DM for a text-first RPG. Your ONLY job:
 1) Read the player's latest message.
 2) Decide if it requires a dice roll using the policy below.
-3) Return a single function call with the decision.
+3) Respond ONLY by calling the provided function with structured arguments.
 
 Policy (authoritative):
 ${clamp(rules)}
 `.trim();
 
-  // Define a single tool/function with a strict JSON schema
+  // Function schema (tools)
   const tools = [
     {
       type: "function",
@@ -114,6 +118,12 @@ ${clamp(rules)}
             reason: {
               type: "string",
               description: "Short natural-language explanation for the decision.",
+            },
+            tags: {
+              type: "array",
+              description: "Optional classification tags, e.g. ['ambient-action'] or ['social-influence'].",
+              items: { type: "string" },
+              nullable: true,
             },
             // fixed-only
             ability: {
@@ -154,6 +164,8 @@ ${clamp(rules)}
   const userPayload = {
     message: input.message,
     sceneTags: input.sceneTags ?? [],
+    // small hint to prefer tagging
+    guidance: "When ambiguous between ambience and influence, prefer 'no-roll' and tag as ['ambient-action']."
   };
 
   try {
@@ -168,7 +180,7 @@ ${clamp(rules)}
         temperature: 0.2,
         max_tokens: 200,
         tools,
-        tool_choice: { type: "function", function: { name: "decide_roll" } }, // force a function call
+        tool_choice: { type: "function", function: { name: "decide_roll" } },
         messages: [
           { role: "system", content: systemPrompt },
           {

@@ -126,7 +126,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     arbiterDecision = await getRollDecision({ message: userMessage });
   } catch {
-    arbiterDecision = null; // ignore arbiter errors; keep player flow intact
+    arbiterDecision = null;
   }
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -158,24 +158,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const data = JSON.parse(text);
     const reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
-    // Build separate debug messages (do NOT modify narrator reply)
+    // Separate debug messages (do NOT modify narrator reply)
     let debugMessages: Array<{ role: "assistant"; content: string }> = [];
     if (debugMode) {
       const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
+      const tagStr = arbiterDecision?.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : "";
       const arb = (() => {
         if (!arbiterDecision) return "unavailable";
         switch (arbiterDecision.kind) {
-          case "no-roll":      return `no-roll (${arbiterDecision.reason})`;
-          case "auto-success": return `auto-success (${arbiterDecision.reason})`;
-          case "auto-fail":    return `auto-fail (${arbiterDecision.reason})`;
+          case "no-roll":      return `no-roll (${arbiterDecision.reason})${tagStr}`;
+          case "auto-success": return `auto-success (${arbiterDecision.reason})${tagStr}`;
+          case "auto-fail":    return `auto-fail (${arbiterDecision.reason})${tagStr}`;
           case "fixed":
             return `fixed ability=${arbiterDecision.ability} dcHint=${arbiterDecision.dcHint ?? "?"}${
               arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
-            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}`;
+            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}${tagStr}`;
           case "opposed":
             return `opposed atk=${arbiterDecision.attackerAbility} vs ${arbiterDecision.defender}${
               arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
-            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}`;
+            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}${tagStr}`;
           default:             return "unknown";
         }
       })();
@@ -186,7 +187,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ];
     }
 
-    // Return narrator reply unchanged + separate debug messages for the UI to insert
+    // Return narrator reply + separate debug messages for the UI to render before it
     return res.status(200).json({ reply, scenario: scenario.id, debugMessages });
   } catch (e: any) {
     return res.status(500).json({ error: "Unexpected error", detail: String(e) });
