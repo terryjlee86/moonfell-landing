@@ -2,14 +2,25 @@
 //
 // Rolls DM: decides if a player's input should trigger a roll,
 // returning a structured decision + plain-language reason + optional tags.
-// Uses OpenAI function-calling to force structured output.
+// Scope: intent + binary feasibility (must-have capability gates).
+// Soft modifiers (e.g., blinded penalties) are NOT handled here.
 
 import fs from "fs";
 import path from "path";
 
+export type ArbiterInputCharacter = {
+  name?: string;
+  stance?: "neutral" | "braced" | "sprinting" | string;
+  stats?: { STR?: number; AGI?: number; END?: number; INT?: number; WIL?: number; CHA?: number };
+  activeConditions?: string[]; // e.g., ["wounded","blinded"]
+};
+
 export type ArbiterInput = {
   message: string;
-  sceneTags?: string[];
+  sceneTags?: string[];          // e.g., ["rail:demo-area-only","creature:mirefold:wary:6m"]
+  inventoryTags?: string[];      // e.g., ["pc:shield","pc:ranged","pc:light:unlit","pc:rope","pc:throwable:1"]
+  learnedTags?: string[];        // e.g., ["pc:skill:stealth","pc:spell:sootheTone"]
+  character?: ArbiterInputCharacter;
 };
 
 export type ArbiterDecision =
@@ -36,6 +47,7 @@ export type ArbiterDecision =
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+// ---------- utils ----------
 function loadRollRules(): string {
   try {
     return fs.readFileSync(
@@ -58,20 +70,17 @@ function fallback(reason: string): ArbiterDecision {
 
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object" || typeof obj.kind !== "string") return null;
-  const tags = Array.isArray(obj.tags)
-    ? obj.tags.filter((t: any) => typeof t === "string")
-    : undefined;
+  const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
 
   switch (obj.kind) {
     case "no-roll":
     case "auto-success":
-    case "auto-fail": {
+    case "auto-fail":
       if (typeof obj.reason === "string" && obj.reason.length > 0) {
         return { kind: obj.kind, reason: obj.reason, tags };
       }
       return null;
-    }
-    case "fixed": {
+    case "fixed":
       if (typeof obj.ability === "string") {
         return {
           kind: "fixed",
@@ -83,8 +92,7 @@ function coerceDecision(obj: any): ArbiterDecision | null {
         };
       }
       return null;
-    }
-    case "opposed": {
+    case "opposed":
       if (typeof obj.attackerAbility === "string" && typeof obj.defender === "string") {
         return {
           kind: "opposed",
@@ -96,42 +104,107 @@ function coerceDecision(obj: any): ArbiterDecision | null {
         };
       }
       return null;
-    }
     default:
       return null;
   }
+}
+
+// ---------- binary feasibility helpers (deterministic) ----------
+const hasTag = (tags: string[], p: string) => tags.some((t) => t === p || t.startsWith(p + ":"));
+const tagValue = (tags: string[], prefix: string): string | undefined =>
+  tags.find((t) => t.startsWith(prefix + ":"))?.split(":").slice(1).join(":");
+
+function wantsRanged(message: string) {
+  return /\b(shoot|nock|loose|fire|arrow|bow|crossbow)\b/i.test(message);
+}
+function wantsThrow(message: string) {
+  return /\b(throw|toss|hurl|lob)\b/i.test(message);
+}
+function wantsRopeUse(message: string) {
+  return /\b(tie|tether|secure|lasso|lower\s+.*\bwith\b\s+rope)\b/i.test(message);
+}
+function wantsLightAction(message: string) {
+  // only “light/ignite torch/lantern” is a hard binary; “inspect closely in dark” is NOT binary here
+  return /\b(light|ignite|spark)\b.*\b(torch|lantern)\b/i.test(message);
 }
 
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
   const rules = loadRollRules();
   if (!OPENAI_API_KEY) return fallback("Arbiter disabled (no OPENAI_API_KEY)");
 
-  // Heuristic nudge: if explicit influence verbs appear with a creature reference, prefer opposed CHA vs creature.
+  // Merge all tag feeds into one compact list for the model, and for local binary checks.
+  const mergedTags: string[] = [
+    ...(input.sceneTags ?? []),
+    ...(input.inventoryTags ?? []),
+    ...(input.learnedTags ?? []),
+  ].slice(0, 120);
+
+  const msg = input.message.trim();
+  const msgLC = msg.toLowerCase();
+
+  // ---------- Hard rails from tags ----------
+  if (hasTag(mergedTags, "rail:demo-area-only") && /\b(leave|exit|travel|go to|town|city|forest edge)\b/i.test(msg)) {
+    return { kind: "auto-fail", reason: "Demo boundary: cannot leave the preview area.", tags: ["rail-block"] };
+  }
+
+  // ---------- Binary capability gates (deterministic) ----------
+  // Rope-required patterns → must have pc:rope
+  if (wantsRopeUse(msg)) {
+    if (!hasTag(mergedTags, "pc:rope")) {
+      return { kind: "auto-fail", reason: "You have no rope to do that.", tags: ["needs-rope"] };
+    }
+  }
+
+  // Ranged shot → must have pc:ranged
+  if (wantsRanged(msg)) {
+    if (!hasTag(mergedTags, "pc:ranged")) {
+      return { kind: "auto-fail", reason: "No ranged weapon available.", tags: ["needs-ranged-weapon"] };
+    }
+  }
+
+  // Throwing → must have pc:throwable:N with N>0
+  if (wantsThrow(msg)) {
+    const n = parseInt(tagValue(mergedTags, "pc:throwable") || "0", 10);
+    if (!n || n <= 0) {
+      return { kind: "auto-fail", reason: "No throwable items available.", tags: ["needs-throwable"] };
+    }
+  }
+
+  // Lighting a torch/lantern → must have a light-capable item
+  if (wantsLightAction(msg)) {
+    const lightState = tagValue(mergedTags, "pc:light"); // "lit" | "unlit" | "none"
+    if (!lightState || lightState === "none") {
+      return { kind: "auto-fail", reason: "No torch or lantern to light.", tags: ["needs-light-source"] };
+    }
+  }
+
+  // NOTE: Soft feasibility like “blinded” does NOT force auto-fail here.
+  // It will be handled later by the skills/dice system as penalties.
+
+  // ---------- Heuristic nudge for social influence (same as before) ----------
   const influenceVerbs =
     "(calm|lull|charm|soothe|distract|frighten|intimidate|persuade|lure|mesmerise|mesmerize|confuse|taunt|mislead)";
-  const creatureHints =
-    "(creature|goblin|mirefold|beast|guard|lookout|enemy|it|them|him|her)";
-
-  const messageLC = input.message.toLowerCase();
+  const creatureHints = "(creature|goblin|mirefold|beast|guard|lookout|enemy|it|them|him|her)";
   const hardHint =
-    new RegExp(`\\b${influenceVerbs}\\b`).test(messageLC) &&
-    new RegExp(`\\b${creatureHints}\\b`).test(messageLC);
+    new RegExp(`\\b${influenceVerbs}\\b`).test(msgLC) &&
+    new RegExp(`\\b${creatureHints}\\b`).test(msgLC);
 
+  // ---------- LLM policy & call ----------
   const systemPrompt = `
-You are the Rolls DM for a text-first RPG. Your ONLY job:
-1) Read the player's latest message.
-2) Decide if it requires a dice roll using the policy below.
-3) Respond ONLY by calling the provided function with structured arguments.
+You are the Rolls DM. Your scope:
+- Classify the action (no-roll, auto-success, auto-fail, fixed, opposed).
+- Enforce binary feasibility gates only (physics/rails/must-have items).
+- Do NOT apply soft penalties (e.g., blinded); leave those for the dice/skills system.
 
 Policy (authoritative):
 ${clamp(rules)}
 
-Strict heuristics (use BEFORE fallback-to-ambient):
-- If the text includes a verb of influence (e.g., calm, lull, distract, charm, frighten, persuade, lure, mesmerise)
-  AND it refers to a creature/NPC (explicitly or by pronoun/description),
-  THEN classify as a **Roll Required** (usually kind="opposed", attackerAbility="CHA", defender="creature"),
-  tag=["social-influence"].
-- Only treat as ambient when NO intent to influence is stated or implied.
+Guidance:
+- If message includes an influence verb (calm, lull, distract, charm, frighten, persuade, lure, mesmerise) AND references a creature/NPC, classify as **opposed** (attackerAbility="CHA", defender="creature") with tag ["social-influence"].
+- Ambient actions with no intent to influence remain **no-roll** with tag ["ambient-action"].
+- Respect hard rails (e.g., rail:demo-area-only) as **auto-fail** when the player tries to leave the demo area.
+- Use presence/absence signals (pc:ranged, pc:throwable:N, pc:rope, pc:light:lit|unlit|none) to inform feasibility, but only as binary gates when the action explicitly requires them.
+- Soft conditions like pc:blinded, pc:wounded do NOT cause auto-fail here.
 `.trim();
 
   const tools = [
@@ -143,50 +216,14 @@ Strict heuristics (use BEFORE fallback-to-ambient):
         parameters: {
           type: "object",
           properties: {
-            kind: {
-              type: "string",
-              enum: ["no-roll", "auto-success", "auto-fail", "fixed", "opposed"],
-              description: "Exactly one decision type.",
-            },
-            reason: {
-              type: "string",
-              description: "Short natural-language explanation for the decision.",
-            },
-            tags: {
-              type: "array",
-              description:
-                "Optional classification tags, e.g. ['ambient-action'] or ['social-influence'].",
-              items: { type: "string" },
-              nullable: true,
-            },
-            // fixed-only
-            ability: {
-              type: "string",
-              enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"],
-              description: "For kind=fixed: the primary ability used.",
-            },
-            dcHint: {
-              type: "string",
-              enum: ["easy", "standard", "hard", "heroic"],
-              description: "For kind=fixed: optional difficulty hint.",
-              nullable: true,
-            },
-            context: {
-              type: "string",
-              description: "Optional short context string.",
-              nullable: true,
-            },
-            // opposed-only
-            attackerAbility: {
-              type: "string",
-              enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"],
-              description: "For kind=opposed: the player's primary ability.",
-            },
-            defender: {
-              type: "string",
-              enum: ["creature", "environment", "player"],
-              description: "For kind=opposed: what opposes the player.",
-            },
+            kind: { type: "string", enum: ["no-roll", "auto-success", "auto-fail", "fixed", "opposed"] },
+            reason: { type: "string" },
+            tags: { type: "array", items: { type: "string" }, nullable: true },
+            ability: { type: "string", enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"] },
+            dcHint: { type: "string", enum: ["easy", "standard", "hard", "heroic"], nullable: true },
+            context: { type: "string", nullable: true },
+            attackerAbility: { type: "string", enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"] },
+            defender: { type: "string", enum: ["creature", "environment", "player"] },
           },
           required: ["kind", "reason"],
           additionalProperties: false,
@@ -196,21 +233,18 @@ Strict heuristics (use BEFORE fallback-to-ambient):
   ];
 
   const userPayload = {
-    message: input.message,
-    sceneTags: input.sceneTags ?? [],
-    // hard nudges to avoid misclassifying intentful influence as ambient
+    message: msg,
+    tags: mergedTags,
+    character: input.character ?? {},
     hardHint,
     guidance:
-      "When ambiguous between ambience and influence, prefer 'no-roll' with tags=['ambient-action']. IF influence verb + creature reference, prefer opposed CHA vs creature with tags=['social-influence']."
+      "Prefer 'no-roll' for pure ambience. Prefer 'opposed' for creature influence attempts. Use auto-fail only for physics/rails/missing must-have item."
   };
 
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
@@ -219,38 +253,23 @@ Strict heuristics (use BEFORE fallback-to-ambient):
         tool_choice: { type: "function", function: { name: "decide_roll" } },
         messages: [
           { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content:
-              "Decide roll strictly via the policy. Respond ONLY by calling decide_roll with appropriate fields.\n" +
-              JSON.stringify(userPayload),
-          },
+          { role: "user", content: "Decide roll per policy; respond only by calling decide_roll.\n" + JSON.stringify(userPayload) },
         ],
       }),
     });
 
     const text = await r.text();
-    if (!r.ok) {
-      return fallback(`Arbiter error (${r.status})`);
-    }
-
+    if (!r.ok) return fallback(`Arbiter error (${r.status})`);
     const data = JSON.parse(text);
     const toolCalls = data?.choices?.[0]?.message?.tool_calls;
-    if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
-      return fallback("Arbiter fallback (no tool call)");
-    }
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return fallback("Arbiter fallback (no tool call)");
 
     const first = toolCalls[0];
-    if (first?.function?.name !== "decide_roll") {
-      return fallback("Arbiter fallback (wrong tool)");
-    }
+    if (first?.function?.name !== "decide_roll") return fallback("Arbiter fallback (wrong tool)");
 
     let args: any = {};
-    try {
-      args = JSON.parse(first.function.arguments || "{}");
-    } catch {
-      return fallback("Arbiter fallback (bad tool args)");
-    }
+    try { args = JSON.parse(first.function.arguments || "{}"); }
+    catch { return fallback("Arbiter fallback (bad tool args)"); }
 
     const decision = coerceDecision(args);
     return decision ?? fallback("Arbiter fallback (schema mismatch)");

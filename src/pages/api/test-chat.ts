@@ -1,8 +1,15 @@
+// src/pages/api/test-chat.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import fs from "fs";
 import path from "path";
 import forestAmbush from "../../prompts/scenarios/forest_ambush";
 import { getRollDecision, ArbiterDecision } from "../../services/rolls_dm";
+
+// NEW: bring in the feeds (safe, compact serializers)
+import { characterFeed } from "../../feeds/character_feed";
+import { inventoryFeed } from "../../feeds/inventory_feed";
+import { contextFeed } from "../../feeds/context_feed";
+import { learnedFeed } from "../../feeds/learned_feed";
 
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
@@ -80,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     message?: string;
     history?: Turn[];
     scenarioId?: string;
-    debug?: boolean; // frontend toggle
+    debug?: boolean; // <-- front-end checkbox toggles this
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
@@ -100,11 +107,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const scenario = forestAmbush;
 
   const SYSTEM_PROMPT = buildSystemPrompt(
-    scenario,
-    worldDoc,
-    encounterDoc,
-    conductorDoc,
-    systemDoc
+      scenario,
+      worldDoc,
+      encounterDoc,
+      conductorDoc,
+      systemDoc
   );
 
   // Init: send scenario intro without spending tokens
@@ -118,15 +125,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const userMessage = (message || "").trim();
   if (!userMessage) return res.status(400).json({ error: "No message provided" });
 
-  // Debug is controlled by frontend flag; keep legacy phrase as a fallback
-  const debugMode = Boolean(debug) || userMessage.toLowerCase().includes("debug please");
-
-  // Sidecar: call Rolls DM (does NOT affect narration flow)
+  // ---------- Gather feeds (compact, prompt-safe) ----------
+  // These feeds DO NOT affect narration; they only help the Rolls DM decide feasibility.
   let arbiterDecision: ArbiterDecision | null = null;
+
+  const char = characterFeed();    // { name, stance, stats, activeConditions }
+  const inv  = inventoryFeed();    // { tags: string[], list: {...} }
+  const ctx  = contextFeed();      // { tags: string[] }
+  const lrn  = learnedFeed();      // { tags: string[], list: {...} }
+
+  // Ask the Rolls DM with feeds
   try {
-    arbiterDecision = await getRollDecision({ message: userMessage });
+    arbiterDecision = await getRollDecision({
+      message: userMessage,
+      sceneTags: ctx.tags,            // rails + creatures
+      inventoryTags: inv.tags,        // shield/ranged/light/rope/healing/throwable:X
+      learnedTags: lrn.tags,          // pc:skill:*, pc:spell:*
+      character: {
+        name: char.name,
+        stance: char.stance,
+        stats: char.stats,
+        activeConditions: char.activeConditions,
+      },
+    });
   } catch {
-    arbiterDecision = null;
+    arbiterDecision = null; // never block the player flow if arbiter fails
   }
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -156,39 +179,66 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const data = JSON.parse(text);
-    const reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
+    let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
-    // Separate debug messages (do NOT modify narrator reply)
-    let debugMessages: Array<{ role: "assistant"; content: string }> = [];
-    if (debugMode) {
+    // ---------- Debug output (optional; does not change the narrator’s prose) ----------
+    if (debug === true) {
       const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
-      const tagStr = arbiterDecision?.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : "";
-      const arb = (() => {
+
+      const decisionStr = (() => {
         if (!arbiterDecision) return "unavailable";
         switch (arbiterDecision.kind) {
-          case "no-roll":      return `no-roll (${arbiterDecision.reason})${tagStr}`;
-          case "auto-success": return `auto-success (${arbiterDecision.reason})${tagStr}`;
-          case "auto-fail":    return `auto-fail (${arbiterDecision.reason})${tagStr}`;
+          case "no-roll":
+          case "auto-success":
+          case "auto-fail":
+            return `${arbiterDecision.kind} (${arbiterDecision.reason})${
+              arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""
+            }`;
           case "fixed":
-            return `fixed ability=${arbiterDecision.ability} dcHint=${arbiterDecision.dcHint ?? "?"}${
+            return `fixed ability=${arbiterDecision.ability}${
+              arbiterDecision.dcHint ? ` dcHint=${arbiterDecision.dcHint}` : ""
+            }${
               arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
-            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}${tagStr}`;
+            }${
+              arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""
+            }${
+              arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""
+            }`;
           case "opposed":
-            return `opposed atk=${arbiterDecision.attackerAbility} vs ${arbiterDecision.defender}${
+            return `opposed atk=${arbiterDecision.attackerAbility} vs ${
+              arbiterDecision.defender
+            }${
               arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
-            }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}${tagStr}`;
-          default:             return "unknown";
+            }${
+              arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""
+            }${
+              arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""
+            }`;
+          default:
+            return "unknown";
         }
       })();
 
-      debugMessages = [
-        { role: "assistant", content: `[arb: input="${preview}" | ${arb}]` },
-        { role: "assistant", content: `[dbg: preview mode; internal rolls hidden]` },
-      ];
+      // compact snapshot of feeds that informed the decision
+      const feedTags = [
+        ...ctx.tags,
+        ...inv.tags,
+        ...lrn.tags,
+      ]
+        .slice(0, 24) // prevent huge lines
+        .join(", ");
+
+      const cond = (char.activeConditions?.length ? char.activeConditions.join(",") : "none");
+
+      const dbgBlock =
+        `[arb: input="${preview}" | ${decisionStr}]\n` +
+        `[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
+
+      // prepend debug to the narrator reply so it shows *just before* prose
+      reply = `${dbgBlock}\n\n${reply}`;
     }
 
-    // Return narrator reply + separate debug messages for the UI to render before it
-    return res.status(200).json({ reply, scenario: scenario.id, debugMessages });
+    return res.status(200).json({ reply, scenario: scenario.id });
   } catch (e: any) {
     return res.status(500).json({ error: "Unexpected error", detail: String(e) });
   }
