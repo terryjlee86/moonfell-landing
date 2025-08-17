@@ -119,7 +119,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const debugMode = userMessage.toLowerCase().includes("debug please");
 
-  // Ask the Rolls DM (stubbed for now). This does NOT affect narration flow.
+  // Call the Rolls DM (sidecar-only; does NOT affect narration flow)
   let arbiterDecision: ArbiterDecision | null = null;
   try {
     arbiterDecision = await getRollDecision({ message: userMessage });
@@ -154,20 +154,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const data = JSON.parse(text);
-    let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
+    const reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
+    // Build separate debug messages (do NOT modify narrator reply)
+    let debugMessages: Array<{ role: "assistant"; content: string }> = [];
     if (debugMode) {
-      // Build a compact arbiter summary line with input, decision, and reason.
       const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
       const arb = (() => {
         if (!arbiterDecision) return "unavailable";
         switch (arbiterDecision.kind) {
-          case "no-roll":
-            return `no-roll (${arbiterDecision.reason})`;
-          case "auto-success":
-            return `auto-success (${arbiterDecision.reason})`;
-          case "auto-fail":
-            return `auto-fail (${arbiterDecision.reason})`;
+          case "no-roll":      return `no-roll (${arbiterDecision.reason})`;
+          case "auto-success": return `auto-success (${arbiterDecision.reason})`;
+          case "auto-fail":    return `auto-fail (${arbiterDecision.reason})`;
           case "fixed":
             return `fixed ability=${arbiterDecision.ability} dcHint=${arbiterDecision.dcHint ?? "?"}${
               arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
@@ -176,16 +174,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return `opposed atk=${arbiterDecision.attackerAbility} vs ${arbiterDecision.defender}${
               arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
             }${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}`;
-          default:
-            return "unknown";
+          default:             return "unknown";
         }
       })();
 
-      reply += `\n\n[arb: input="${preview}" | ${arb}]`;
-      reply += `\n[dbg: preview mode; internal rolls hidden]`;
+      debugMessages = [
+        { role: "assistant", content: `[arb: input="${preview}" | ${arb}]` },
+        { role: "assistant", content: `[dbg: preview mode; internal rolls hidden]` },
+      ];
     }
 
-    return res.status(200).json({ reply, scenario: scenario.id });
+    // Return narrator reply unchanged + separate debug messages for the UI to insert
+    return res.status(200).json({ reply, scenario: scenario.id, debugMessages });
   } catch (e: any) {
     return res.status(500).json({ error: "Unexpected error", detail: String(e) });
   }
