@@ -10,6 +10,7 @@ export default function Playtest() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
+  const [debug, setDebug] = useState(false); // <-- NEW: Debug toggle
   const viewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,8 +57,9 @@ export default function Playtest() {
         body: JSON.stringify({
           passcode,
           message: userTurn.content,
-          history,
+          history,               // keep as-is
           scenarioId: "forest_ambush",
+          debug,                 // <-- NEW: send toggle to backend
         }),
       });
       const j = await r.json();
@@ -67,7 +69,14 @@ export default function Playtest() {
         return;
       }
       const reply: string = j.reply || "(no reply)";
-      setHistory((h) => [...h, { role: "assistant", content: reply }]);
+
+      // NEW: insert any debug messages BEFORE the narrator reply
+      const debugMessages: Turn[] = Array.isArray(j.debugMessages) ? j.debugMessages : [];
+      setHistory((h) => [
+        ...h,
+        ...debugMessages,                 // separate assistant messages
+        { role: "assistant", content: reply }, // narrator reply unchanged
+      ]);
     } catch (e: any) {
       setErr("Network error.");
     } finally {
@@ -128,18 +137,30 @@ export default function Playtest() {
               )}
             </div>
 
-            <form onSubmit={send} style={styles.inputRow}>
-              <input
-                type="text"
-                placeholder="Describe exactly what you do…"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                style={styles.input}
-              />
-              <button style={styles.button} disabled={loading || !input.trim()}>
-                Send
-              </button>
-            </form>
+            {/* NEW: Debug toggle aligned with input row */}
+            <div style={{ ...styles.inputRow, alignItems: "center" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={debug}
+                  onChange={(e) => setDebug(e.target.checked)}
+                />
+                Debug
+              </label>
+
+              <form onSubmit={send} style={{ display: "flex", gap: 8, flex: 1 }}>
+                <input
+                  type="text"
+                  placeholder="Describe exactly what you do…"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  style={styles.input}
+                />
+                <button style={styles.button} disabled={loading || !input.trim()}>
+                  Send
+                </button>
+              </form>
+            </div>
           </>
         )}
 
@@ -163,8 +184,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2vh 2vw",
   },
   card: {
-    width: "min(1800px, 95vw)",    // Increased width
-    height: "min(95vh, 1200px)",   // Increased height
+    width: "min(1800px, 95vw)",
+    height: "min(95vh, 1200px)",
     background: "white",
     borderRadius: 16,
     padding: "2vh 2vw",
@@ -196,7 +217,7 @@ const styles: Record<string, React.CSSProperties> = {
   inputRow: {
     marginTop: 12,
     display: "flex",
-    gap: 8,
+    gap: 12,
   },
   input: {
     flex: 1,
