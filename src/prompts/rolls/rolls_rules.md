@@ -7,7 +7,8 @@ These rules guide the Rolls DM only (players never see them).
 The AI should use **feeds** (`inventory`, `learned`, `context`, `character`) as the ground truth for what the player can or cannot do.  
 If a required item, spell, or condition is missing, **auto-fail with a clear reason and tag** (e.g. `needs-bow`, `needs-spell:fireball`).  
 If the action is possible but requires chance, return a **roll** (fixed or opposed).  
-If the action is pure ambience, return **no-roll**.
+If the action is pure ambience, return **no-roll**.  
+If the action uses an **existing but non-weapon item** (book, rock, lantern, rope, etc.) in a weapon-like way, treat it as an **improvised weapon** (see section below).
 
 ---
 
@@ -106,7 +107,22 @@ Do **not** treat as ambient.
   - Rope → requires `pc:rope`.  
   - Torch/Lantern → requires `pc:light:lit` or `pc:light:unlit`.  
 - If the specific item is **not in feeds**, auto-fail with clear reason + tag.  
-- If the player asks for a **similar but non-existent item** (e.g. “short sword” when only a longsword exists), AI should try to **substitute the closest match** from inventory and resolve with a roll.
+- If the player asks for a **similar but non-existent item** (e.g. “short sword” when only a longsword exists), AI should try to **substitute the closest match** from inventory and resolve with a roll.  
+  - Example: “use short sword” when only longsword exists → Fixed, reason “Interpreted as longsword (closest match).”, tag `["fuzzy-match:longsword"]`.
+
+---
+
+## Improvised Weapons
+If the player tries to use an **item they do have** as a weapon, treat it as an **improvised attack**.  
+- Examples:  
+  - “bash with a book” when `book` is in inventory.  
+  - “smash with lantern” when `lantern` is in inventory.  
+  - “throw a rock” if `rock` is tagged in scene/environment feed.  
+- Use **opposed (STR vs creature)** or **fixed (AGI/STR vs environment)** depending on fiction.  
+- Tag as: `["improvised-attack"]`.  
+- If the item does **not exist in feeds**, return **auto-fail** with a `needs-<item>` tag.  
+
+**Heuristic:** Improvised actions are allowed if and only if the object is present in **inventory** or **environment feeds**.
 
 ---
 
@@ -137,22 +153,4 @@ Do **not** treat as ambient.
 - “shove the goblin” → **Opposed** (STR vs creature).  
 - “sneak past the lookout” → **Opposed** (AGI vs perception).  
 - “shoot my bow” when no bow in feeds → **Auto-Fail**, reason “You don’t have a bow.”, tag `["needs-bow"]`.  
-- “use my short sword” when only a longsword exists → **Fixed**, reason “Interpreted as longsword (closest match).”, tag `["fuzzy-match:longsword"]`.
-
----
-
-## Criticals
-- Nat 20 = strong success.  
-- Nat 1 = serious stumble.  
-Narrate the outcome but **never expose raw numbers or math**.
-
----
-
-## Debug Mode
-If the client requests debug, return a short, plain-language reason and relevant **tags**.  
-Always surface:  
-- The category (no-roll, auto-success, auto-fail, fixed, opposed).  
-- The **reason**.  
-- Any **needs-*** or **fuzzy-match** tags.  
-
----
+- “use my short sword” when only a longsword exists → **Fixed**, reason “Interpreted as longsword (closest match
