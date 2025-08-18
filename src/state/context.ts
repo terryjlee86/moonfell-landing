@@ -1,4 +1,3 @@
-// src/state/context.ts
 export type Nearby = {
   id: string;
   kind: string; // "goblin", "mirefold", etc.
@@ -6,14 +5,18 @@ export type Nearby = {
   distanceM: number;
 };
 
+export type ObservedItem = { slug: string; kind?: "improv" | "loot" | "scenery" };
+
 export type ContextState = {
-  rails?: string[]; // e.g. ["demo-area-only"]
+  rails?: string[];
   nearby: Nearby[];
+  observed?: ObservedItem[]; // <— NEW
 };
 
 let _ctx: ContextState = {
   rails: ["demo-area-only"],
   nearby: [],
+  observed: [], // <— NEW
 };
 
 export function getContext(): ContextState { return _ctx; }
@@ -25,4 +28,15 @@ export function upsertNearby(n: Nearby) {
 }
 export function removeNearby(id: string) {
   _ctx.nearby = _ctx.nearby.filter(n => n.id !== id);
+}
+
+// NEW — add/remove observed items (e.g., "rock")
+export function observeItem(slug: string, kind: ObservedItem["kind"] = "improv") {
+  const s = slug.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  if (!_ctx.observed!.some(o => o.slug === s)) _ctx.observed!.push({ slug: s, kind });
+}
+export function clearObserved(slug?: string) {
+  if (!slug) { _ctx.observed = []; return; }
+  const s = slug.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  _ctx.observed = _ctx.observed!.filter(o => o.slug !== s);
 }
