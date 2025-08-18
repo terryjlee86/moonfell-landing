@@ -1,13 +1,11 @@
 // src/services/rolls_dm.ts
 //
-// Slim AI-first Rolls DM:
+// AI-first Rolls DM (tool-call enforced):
 // - Loads rolls_rules.md (all guidance lives there)
 // - Sends player message + feeds to the LLM
-// - Expects a JSON decision (no-roll | auto-success | auto-fail | fixed | opposed)
-// - Returns the decision (with reason + tags) for the caller to debug/log
-//
-// Schema is relaxed to avoid constant fallback. Always returns something.
-// If AI JSON is malformed or incomplete, add "arbiter-relaxed" tag.
+// - Expects a function call `decide_roll` with structured args
+// - Relaxes missing fields (adds tag "arbiter-relaxed") instead of hard failing
+// - No regex lexicons; feeds are the ground truth.
 
 import fs from "fs";
 import path from "path";
@@ -35,7 +33,6 @@ export type ArbiterDecision = {
   kind: "no-roll" | "auto-success" | "auto-fail" | "fixed" | "opposed";
   reason: string;
   tags?: string[];
-  // optional depending on kind:
   ability?: Ability;
   dcHint?: DCHint;
   context?: string;
@@ -46,11 +43,10 @@ export type ArbiterDecision = {
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-function clamp(text: string, max = 9000) {
+function clamp(text: string, max = 14000) {
   if (!text) return "";
   return text.length > max ? text.slice(0, max) + "\n\n...[trimmed]..." : text;
 }
-
 function loadRollRules(): string {
   try {
     const p = path.join(process.cwd(), "src", "prompts", "rolls", "rolls_rules.md");
@@ -59,38 +55,43 @@ function loadRollRules(): string {
     return "[No rolls_rules.md found]";
   }
 }
-
 function fallback(reason: string): ArbiterDecision {
   return { kind: "no-roll", reason, tags: ["arbiter-fallback"] };
 }
 
-// --- RELAXED COERCION ---
+// relaxed coercion from tool args
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object") return null;
-  if (typeof obj.kind !== "string" || typeof obj.reason !== "string") {
-    return { kind: "no-roll", reason: "Malformed response", tags: ["arbiter-fallback", "arbiter-relaxed"] };
-  }
 
-  let tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : [];
+  const kind = typeof obj.kind === "string" ? obj.kind : "no-roll";
+  const reason =
+    typeof obj.reason === "string" && obj.reason.trim()
+      ? obj.reason
+      : "Unspecified reason";
+
   let relaxed = false;
 
-  const decision: ArbiterDecision = {
-    kind: obj.kind,
-    reason: obj.reason,
-    tags,
-  };
+  const out: ArbiterDecision = { kind, reason };
 
-  if (obj.ability) decision.ability = obj.ability; else relaxed = true;
-  if (obj.dcHint) decision.dcHint = obj.dcHint;
-  if (obj.context) decision.context = obj.context;
-  if (obj.attackerAbility) decision.attackerAbility = obj.attackerAbility; else if (obj.kind === "opposed") relaxed = true;
-  if (obj.defender) decision.defender = obj.defender; else if (obj.kind === "opposed") relaxed = true;
+  if (Array.isArray(obj.tags)) out.tags = obj.tags.filter((t: any) => typeof t === "string");
+
+  // optional fields
+  if (typeof obj.ability === "string") out.ability = obj.ability;
+  else if (kind === "fixed") relaxed = true;
+
+  if (typeof obj.dcHint === "string") out.dcHint = obj.dcHint;
+  if (typeof obj.context === "string") out.context = obj.context;
+
+  if (typeof obj.attackerAbility === "string") out.attackerAbility = obj.attackerAbility;
+  else if (kind === "opposed") relaxed = true;
+
+  if (typeof obj.defender === "string") out.defender = obj.defender;
+  else if (kind === "opposed") relaxed = true;
 
   if (relaxed) {
-    decision.tags = [...(decision.tags ?? []), "arbiter-relaxed"];
+    out.tags = [...(out.tags ?? []), "arbiter-relaxed"];
   }
-
-  return decision;
+  return out;
 }
 
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
@@ -109,28 +110,51 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   };
 
   const system = `
-You are the Moonfell **Rolls DM**.
-Your job is to classify the player's action into:
+You are the Moonfell **Rolls DM**. Classify the player's action into exactly one:
 - "no-roll" (pure ambience / no consequence intended)
 - "auto-success" (trivial, always succeeds)
 - "auto-fail" (physically impossible OR explicitly missing required item/spell)
-- "fixed" (test vs environment; ability: STR/AGI/END/INT/WIL/CHA; optional dcHint)
+- "fixed" (test vs environment; ability: STR/AGI/END/INT/WIL/CHA; optional dcHint: easy/standard/hard/heroic)
 - "opposed" (contest vs another agent; attackerAbility; defender=creature/environment/player)
 
-All reasoning rules and examples are below. DO NOT invent inventory; rely on provided tags. 
-Return JSON only.
+Use ONLY the provided feeds/tags for what exists. Do not invent inventory. Be concise.
+All reasoning policy/rules are provided by the ROLLS RULES content. Return your answer by calling the tool function.
 `.trim();
 
   const user = `
-# ROLLS RULES
+# ROLLS RULES (authoritative)
 ${rules}
 
 # INPUT
 ${JSON.stringify(payload, null, 2)}
-
-# OUTPUT FORMAT (JSON ONLY)
-{ "kind": "...", "reason": "...", "tags": ["..."], ... }
 `.trim();
+
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: "decide_roll",
+        description: "Return the roll decision for the player's input.",
+        parameters: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["no-roll", "auto-success", "auto-fail", "fixed", "opposed"] },
+            reason: { type: "string" },
+            tags: { type: "array", items: { type: "string" } },
+            // fixed
+            ability: { type: "string", enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"] },
+            dcHint: { type: "string", enum: ["easy", "standard", "hard", "heroic"] },
+            context: { type: "string" },
+            // opposed
+            attackerAbility: { type: "string", enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"] },
+            defender: { type: "string", enum: ["creature", "environment", "player"] },
+          },
+          required: ["kind", "reason"],
+          additionalProperties: true, // allow model wiggle room
+        },
+      },
+    },
+  ];
 
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -139,25 +163,35 @@ ${JSON.stringify(payload, null, 2)}
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
-        max_tokens: 250,
+        max_tokens: 220,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
         ],
+        tools,
+        tool_choice: { type: "function", function: { name: "decide_roll" } },
       }),
     });
 
     const text = await r.text();
     if (!r.ok) return fallback(`Arbiter error (${r.status})`);
 
-    const jsonStart = text.indexOf("{");
-    const jsonEnd = text.lastIndexOf("}");
-    const raw = jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text;
+    const data = JSON.parse(text);
+    const toolCalls = data?.choices?.[0]?.message?.tool_calls;
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
+      return fallback("Arbiter fallback (no tool call)");
+    }
 
-    let parsed: any;
-    try { parsed = JSON.parse(raw); } catch { return fallback("Arbiter fallback (bad JSON)") }
+    const call = toolCalls[0];
+    if (call?.function?.name !== "decide_roll") {
+      return fallback("Arbiter fallback (wrong tool)");
+    }
 
-    return coerceDecision(parsed) ?? fallback("Arbiter fallback (schema mismatch)");
+    let args: any = {};
+    try { args = JSON.parse(call.function.arguments || "{}"); }
+    catch { return fallback("Arbiter fallback (bad tool args)"); }
+
+    return coerceDecision(args) ?? fallback("Arbiter fallback (schema mismatch)");
   } catch {
     return fallback("Arbiter fallback (request failed)");
   }
