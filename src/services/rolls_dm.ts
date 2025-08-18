@@ -1,14 +1,14 @@
 // src/services/rolls_dm.ts
 //
-// Rolls DM: feasibility-only classifier.
-// - Binary gates for: rails, must-have items (bow/crossbow, throwing axe, rope, light), known spells
-// - Wearables equip/unequip using feed tags from inventory_feed.ts
-// - Leaves soft modifiers (blinded, armor penalties) to the dice system later.
-// - Calls LLM for classification; enforces post-LLM guards to avoid spurious auto-fails.
+// Rolls DM (scalable, feasibility-only):
+// - Binary gates driven by tags from feeds (inventory/learned/context).
+// - LLM only for narrative classification (ambient vs opposed vs fixed).
+// - No soft modifiers (blinded etc) — leave them to the dice layer.
 
 import fs from "fs";
 import path from "path";
 
+// ---------- Types ----------
 export type ArbiterInputCharacter = {
   name?: string;
   stance?: "neutral" | "braced" | "sprinting" | string;
@@ -44,11 +44,12 @@ function loadRollRules(): string {
 }
 function clamp(text: string, max = 6000) { return !text ? "" : text.length > max ? text.slice(0, max) + "\n\n...[trimmed]..." : text; }
 function fallback(reason: string): ArbiterDecision { return { kind: "no-roll", reason, tags: ["arbiter-fallback"] }; }
+
 const hasTag = (tags: string[], p: string) => tags.some((t) => t === p || t.startsWith(p + ":"));
 const tagValue = (tags: string[], prefix: string): string | undefined =>
   tags.find((t) => t.startsWith(prefix + ":"))?.split(":").slice(1).join(":");
 
-// --- coerceDecision (ADDED BACK) ---
+// ---------- safe coercer for tool outputs ----------
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object" || typeof obj.kind !== "string") return null;
   const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
@@ -87,23 +88,23 @@ function coerceDecision(obj: any): ArbiterDecision | null {
   }
 }
 
-// ---------- message intent helpers ----------
-function wantsRanged(message: string) { return /\b(shoot|nock|loose|fire)\b/i.test(message); }
-function mentionsBow(message: string)  { return /\b(bow|arrow|nock|loose)\b/i.test(message); }
-function wantsThrow(message: string)   { return /\b(throw|toss|hurl|lob)\b/i.test(message); }
-function mentionsThrowingAxe(message: string) { return /\b(throwing\s*axe|hand\s*axe)\b/i.test(message); }
-function wantsRopeUse(message: string){ return /\b(tie|tether|secure|lasso|lower\s+.*\bwith\b\s+rope)\b/i.test(message); }
-function wantsLightAction(message: string) { return /\b(light|ignite|spark)\b.*\b(torch|lantern)\b/i.test(message); }
-function wantsToLeaveDemo(message: string) { return /\b(leave|exit|travel|go to|head to|make for)\b/i.test(message); }
+// ---------- intent helpers (narrow, not item-specific) ----------
+const rx = {
+  leaveDemo: /\b(leave|exit|travel|go to|head to|make for)\b/i,
+  ranged: /\b(shoot|loose|fire|nock)\b/i,
+  throw: /\b(throw|toss|hurl|lob)\b/i,
+  ropeUse: /\b(tie|tether|secure|lasso|lower\s+.*\bwith\b\s+rope)\b/i,
+  lightAct: /\b(light|ignite|spark)\b.*\b(torch|lantern)\b/i,
+  equip: /\b(equip|put on|wear|don)\b/i,
+  unequip: /\b(unequip|remove|take off|doff)\b/i,
+  mentionsBow: /\b(bow|arrow|nock|loose)\b/i,
+  mentionsThrowingAxe: /\b(throwing\s*axe|hand\s*axe)\b/i,
+};
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
-
-// ---------- wearables intent parsing ----------
-type WearIntent = { slot?: WearableSlot; slug?: string };
 type WearableSlot = "head"|"chest"|"hands"|"legs"|"feet"|"back"|"waist"|"ring1"|"ring2"|"amulet";
-
 function detectSlotFromText(m: string): WearableSlot | undefined {
   const s = m.toLowerCase();
   if (/\b(head|helm|helmet|coif|cap|hood)\b/.test(s)) return "head";
@@ -117,7 +118,6 @@ function detectSlotFromText(m: string): WearableSlot | undefined {
   if (/\b(ring|signet)\b/.test(s)) return "ring1";
   return undefined;
 }
-
 function extractNamedItemSlug(m: string): string | undefined {
   const s = m.toLowerCase();
   const pat = /\b(equip|put on|wear|don|remove|take off|doff|unequip)\b\s+([a-z0-9][a-z0-9\s\-']{2,40})/i;
@@ -127,13 +127,12 @@ function extractNamedItemSlug(m: string): string | undefined {
   if (!phrase) return undefined;
   return slugify(phrase);
 }
-
-function parseEquipIntent(message: string): WearIntent | null {
-  if (!/\b(equip|put on|wear|don)\b/i.test(message)) return null;
+function parseEquipIntent(message: string) {
+  if (!rx.equip.test(message)) return null;
   return { slot: detectSlotFromText(message), slug: extractNamedItemSlug(message) };
 }
-function parseUnequipIntent(message: string): WearIntent | null {
-  if (!/\b(unequip|remove|take off|doff)\b/i.test(message)) return null;
+function parseUnequipIntent(message: string) {
+  if (!rx.unequip.test(message)) return null;
   return { slot: detectSlotFromText(message), slug: extractNamedItemSlug(message) };
 }
 
@@ -159,6 +158,41 @@ function knowsSpell(learnedTags: string[] | undefined, spellIdLC: string): boole
   return learnedTags.some((t) => t.startsWith("pc:spell:") && t.slice("pc:spell:".length).toLowerCase() === spellIdLC);
 }
 
+// ---------- capability registry (generic) ----------
+type CapRule = (tags: string[], message: string) => { ok: boolean; failTag?: string; failReason?: string };
+
+// generic numeric helper: pc:throwable:N
+function getInt(tags: string[], prefix: string, def = 0) {
+  const v = tagValue(tags, prefix);
+  const n = v ? parseInt(v, 10) : NaN;
+  return Number.isFinite(n) ? n : def;
+}
+
+const CAP: Record<string, CapRule> = {
+  "weapon:ranged": (tags) => {
+    const ok = hasTag(tags, "pc:weapon:ranged") || getInt(tags, "pc:throwable") > 0;
+    return ok ? { ok } : { ok: false, failTag: "needs-ranged", failReason: "No ranged or throwable available." };
+  },
+  "weapon:bow": (tags) => {
+    const ok = hasTag(tags, "pc:bow") || hasTag(tags, "pc:crossbow");
+    return ok ? { ok } : { ok: false, failTag: "needs-bow", failReason: "You don’t have a bow or crossbow." };
+  },
+  "weapon:thrown": (tags) => {
+    const ok = getInt(tags, "pc:throwable") > 0;
+    return ok ? { ok } : { ok: false, failTag: "needs-throwable", failReason: "No throwable items available." };
+  },
+  "weapon:throwing-axe": (tags) => {
+    const ok = getInt(tags, "pc:throwing-axe") > 0;
+    return ok ? { ok } : { ok: false, failTag: "needs-throwing-axe", failReason: "No throwing axes available." };
+  },
+  rope: (tags) => hasTag(tags, "pc:rope") ? { ok: true } : { ok: false, failTag: "needs-rope", failReason: "You have no rope to do that." },
+  lightSourcePresent: (tags) => {
+    const state = tagValue(tags, "pc:light") || "none";
+    return state !== "none" ? { ok: true } : { ok: false, failTag: "needs-light-source", failReason: "No torch or lantern to light." };
+  },
+};
+
+// ---------- main ----------
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
   const rules = loadRollRules();
   if (!OPENAI_API_KEY) return fallback("Arbiter disabled (no OPENAI_API_KEY)");
@@ -172,161 +206,102 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   const msg = input.message.trim();
   const msgLC = msg.toLowerCase();
 
-  // ---------- Rails: only if trying to leave ----------
-  if (hasTag(mergedTags, "rail:demo-area-only") && wantsToLeaveDemo(msg)) {
+  // Rails — only if attempting to leave
+  if (hasTag(mergedTags, "rail:demo-area-only") && rx.leaveDemo.test(msg)) {
     return { kind: "auto-fail", reason: "Demo boundary: you can’t leave the preview area.", tags: ["rail-block"] };
   }
 
-  // ---------- Binary capability gates ----------
-  let binaryFailed = false;
-  const prereq: { rangedOK?: boolean; bowOK?: boolean; crossbowOK?: boolean; throwOK?: boolean; ropeOK?: boolean; lightCapOK?: boolean } = {};
-
-  const hasBow = hasTag(mergedTags, "pc:bow");
-  const hasCrossbow = hasTag(mergedTags, "pc:crossbow");
-  const throwingAxes = parseInt(tagValue(mergedTags, "pc:throwing-axe") || "0", 10);
-  const totalThrowable = parseInt(tagValue(mergedTags, "pc:throwable") || "0", 10);
-
-  // Rope
-  if (wantsRopeUse(msg)) {
-    if (!hasTag(mergedTags, "pc:rope")) {
-      binaryFailed = true;
-      return { kind: "auto-fail", reason: "You have no rope to do that.", tags: ["needs-rope"] };
+  // Spells — deterministic feasibility
+  const requestedSpells = extractRequestedSpells(msg);
+  if (requestedSpells.length) {
+    const unknown = requestedSpells.find((s) => !knowsSpell(input.learnedTags, s));
+    if (unknown) {
+      return { kind: "auto-fail", reason: `You do not know the spell '${unknown}'.`, tags: [`needs-spell:${unknown}`] };
     }
-    prereq.ropeOK = true;
   }
 
-  // Light
-  const lightIntent = wantsLightAction(msg);
-  if (lightIntent) {
-    const lightState = tagValue(mergedTags, "pc:light"); // "lit" | "unlit" | "none"
-    if (!lightState || lightState === "none") {
-      binaryFailed = true;
-      return { kind: "auto-fail", reason: "No torch or lantern to light.", tags: ["needs-light-source"] };
-    }
-    prereq.lightCapOK = true;
-  }
-
-  // Bow-specific
-  if (mentionsBow(msg)) {
-    if (!hasBow && !hasCrossbow) {
-      binaryFailed = true;
-      return { kind: "auto-fail", reason: "You don’t have a bow or crossbow.", tags: ["needs-bow"] };
-    }
-    prereq.bowOK = hasBow || hasCrossbow;
-  }
-
-  // Generic ranged (shoot) without specifying bow
-  const rangedIntent = wantsRanged(msg);
-  if (rangedIntent && !mentionsBow(msg)) {
-    if (!hasBow && !hasCrossbow && totalThrowable <= 0) {
-      binaryFailed = true;
-      return { kind: "auto-fail", reason: "No ranged option available.", tags: ["needs-ranged-weapon"] };
-    }
-    prereq.rangedOK = true;
-  }
-
-  // Throwing
-  const throwIntent = wantsThrow(msg);
-  if (throwIntent) {
-    if (mentionsThrowingAxe(msg) && throwingAxes <= 0) {
-      binaryFailed = true;
-      return { kind: "auto-fail", reason: "No throwing axes available.", tags: ["needs-throwing-axe"] };
-    }
-    if (totalThrowable <= 0) {
-      binaryFailed = true;
-      return { kind: "auto-fail", reason: "No throwable items available.", tags: ["needs-throwable"] };
-    }
-    prereq.throwOK = true;
-  }
-
-  // ---------- Wearables (equip/unequip) ----------
+  // Wearables equip/unequip — deterministic feasibility
   const equip = parseEquipIntent(msg);
   if (equip) {
     const slot = equip.slot ?? detectSlotFromText(msg);
-    if (equip.slug && slot) {
+    if (slot && equip.slug) {
       const need = `pc:pack:${slot}:${equip.slug}`;
-      const ok = mergedTags.some((t) => t === need);
-      if (!ok) {
-        binaryFailed = true;
+      if (!mergedTags.includes(need)) {
         return { kind: "auto-fail", reason: `You don’t have that ${slot} item in your pack.`, tags: ["needs-wearable", `needs-pack:${slot}:${equip.slug}`] };
       }
       return { kind: "auto-success", reason: `Equipping ${equip.slug.replace(/-/g, " ")}`, tags: ["equip", `slot:${slot}`] };
     }
     if (slot) {
       const anyPack = mergedTags.some((t) => t.startsWith(`pc:pack:${slot}:`));
-      if (!anyPack) {
-        binaryFailed = true;
-        return { kind: "auto-fail", reason: `No ${slot} item in your pack to equip.`, tags: ["needs-wearable", `needs-pack:${slot}`] };
-      }
+      if (!anyPack) return { kind: "auto-fail", reason: `No ${slot} item in your pack to equip.`, tags: ["needs-wearable", `needs-pack:${slot}`] };
       return { kind: "auto-success", reason: `Equipping available ${slot} item`, tags: ["equip", `slot:${slot}`] };
     }
   }
-
   const unequip = parseUnequipIntent(msg);
   if (unequip) {
     const slot = unequip.slot ?? detectSlotFromText(msg);
-    if (slot) {
-      if (unequip.slug) {
-        const need = `pc:wear:${slot}:${unequip.slug}`;
-        const ok = mergedTags.some((t) => t === need);
-        if (!ok) {
-          binaryFailed = true;
-          return { kind: "auto-fail", reason: `You aren’t wearing that ${slot} item.`, tags: ["not-wearing", `missing:${slot}:${unequip.slug}`] };
-        }
-        return { kind: "auto-success", reason: `Removing ${unequip.slug.replace(/-/g, " ")}`, tags: ["unequip", `slot:${slot}`] };
-      } else {
-        const ok = mergedTags.some((t) => t === `pc:wear:${slot}`);
-        if (!ok) {
-          binaryFailed = true;
-          return { kind: "auto-fail", reason: `You aren’t wearing anything on your ${slot}.`, tags: ["not-wearing", `slot:${slot}`] };
-        }
-        return { kind: "auto-success", reason: `Removing ${slot} item`, tags: ["unequip", `slot:${slot}`] };
+    if (slot && unequip.slug) {
+      const need = `pc:wear:${slot}:${unequip.slug}`;
+      if (!mergedTags.includes(need)) {
+        return { kind: "auto-fail", reason: `You aren’t wearing that ${slot} item.`, tags: ["not-wearing", `missing:${slot}:${unequip.slug}`] };
       }
+      return { kind: "auto-success", reason: `Removing ${unequip.slug.replace(/-/g, " ")}`, tags: ["unequip", `slot:${slot}`] };
+    }
+    if (slot) {
+      if (!mergedTags.includes(`pc:wear:${slot}`)) {
+        return { kind: "auto-fail", reason: `You aren’t wearing anything on your ${slot}.`, tags: ["not-wearing", `slot:${slot}`] };
+      }
+      return { kind: "auto-success", reason: `Removing ${slot} item`, tags: ["unequip", `slot:${slot}`] };
     }
   }
 
-  // ---------- Deterministic "known spell" gate ----------
-  const requestedSpells = extractRequestedSpells(msg);
-  if (requestedSpells.length) {
-    const unknown = requestedSpells.find((s) => !knowsSpell(input.learnedTags, s));
-    if (unknown) {
-      binaryFailed = true;
-      return {
-        kind: "auto-fail",
-        reason: `You do not know the spell '${unknown}'.`,
-        tags: [`needs-spell:${unknown}`],
-      };
+  // Binary capability gates (tag-driven, generic)
+  // Rope
+  if (rx.ropeUse.test(msg) && !CAP.rope(mergedTags, msg).ok) {
+    const r = CAP.rope(mergedTags, msg);
+    return { kind: "auto-fail", reason: r.failReason!, tags: [r.failTag!] };
+  }
+  // Light
+  if (rx.lightAct.test(msg) && !CAP.lightSourcePresent(mergedTags, msg).ok) {
+    const r = CAP.lightSourcePresent(mergedTags, msg);
+    return { kind: "auto-fail", reason: r.failReason!, tags: [r.failTag!] };
+  }
+  // Ranged/Thrown (generic first, then specific)
+  if (rx.ranged.test(msg)) {
+    // If they mention “bow/arrow”, enforce bow capability specifically
+    if (rx.mentionsBow.test(msg)) {
+      const r = CAP["weapon:bow"](mergedTags, msg);
+      if (!r.ok) return { kind: "auto-fail", reason: r.failReason!, tags: [r.failTag!] };
+    } else {
+      const r = CAP["weapon:ranged"](mergedTags, msg);
+      if (!r.ok) return { kind: "auto-fail", reason: r.failReason!, tags: [r.failTag!] };
+    }
+  }
+  if (rx.throw.test(msg)) {
+    // If they mention “throwing axe”, enforce that specifically
+    if (rx.mentionsThrowingAxe.test(msg)) {
+      const r = CAP["weapon:throwing-axe"](mergedTags, msg);
+      if (!r.ok) return { kind: "auto-fail", reason: r.failReason!, tags: [r.failTag!] };
+    } else {
+      const r = CAP["weapon:thrown"](mergedTags, msg);
+      if (!r.ok) return { kind: "auto-fail", reason: r.failReason!, tags: [r.failTag!] };
     }
   }
 
-  // ---------- Heuristic nudge for social influence ----------
-  const influenceVerbs =
-    "(calm|lull|charm|soothe|distract|frighten|intimidate|persuade|lure|mesmerise|mesmerize|confuse|taunt|mislead)";
+  // Heuristic: social influence verbs + creature mentions => opposed CHA vs creature
+  const influenceVerbs = "(calm|lull|charm|soothe|distract|frighten|intimidate|persuade|lure|mesmerise|mesmerize|confuse|taunt|mislead)";
   const creatureHints = "(creature|goblin|mirefold|beast|guard|lookout|enemy|it|them|him|her)";
-  const hardHint =
-    new RegExp(`\\b${influenceVerbs}\\b`).test(msgLC) &&
-    new RegExp(`\\b${creatureHints}\\b`).test(msgLC);
+  const hardHint = new RegExp(`\\b${influenceVerbs}\\b`).test(msgLC) && new RegExp(`\\b${creatureHints}\\b`).test(msgLC);
 
-  // ---------- LLM policy & call ----------
+  // LLM: narrative classification (ambient vs fixed/opposed)
   const systemPrompt = `
-You are the Rolls DM. Your scope:
+You are the Rolls DM. Your job:
 - Classify the action (no-roll, auto-success, auto-fail, fixed, opposed).
-- Enforce only *binary* feasibility (physics/explicit rails/must-have items/known spells/specific weapon requirements/wearables equip-unequip).
-- Do NOT apply soft penalties (e.g., blinded); leave those for the dice/skills system.
-- Do NOT cite demo rails unless the player explicitly attempts to leave the demo area.
-
+- Binary feasibility is already constrained by tags (items, spells, wearables, rails). Do not invent fails.
+- Prefer **no-roll** for pure ambience; **opposed** for influence attempts vs creatures; **fixed** for environment/skill checks.
 Policy (authoritative):
 ${clamp(rules)}
-
-Guidance:
-- If the message includes an influence verb (calm, lull, distract, charm, frighten, persuade, lure, mesmerise) AND references a creature/NPC, classify as **opposed** (attackerAbility="CHA", defender="creature") with tag ["social-influence"].
-- Ambient actions with no intent to influence remain **no-roll** with tag ["ambient-action"].
-- Ranged specificity matters: “shoot with my bow” requires pc:bow or pc:crossbow. Throwing requires pc:throwable:N (and ideally pc:throwing-axe:N).
-- Wearables:
-  - Removing something requires \`pc:wear:<slot>\` (and \`pc:wear:<slot>:<slug>\` if named).
-  - Equipping something requires \`pc:pack:<slot>:<slug>\` (or any pack item for that slot if unspecified).
-- Spells: attempting an unknown spell is **auto-fail** (already enforced deterministically).
-`.trim();
+  `.trim();
 
   const tools = [
     {
@@ -359,15 +334,7 @@ Guidance:
     character: input.character ?? {},
     hardHint,
     guidance:
-      "Prefer 'no-roll' for pure ambience. Prefer 'opposed' for creature influence attempts. Use auto-fail only for physics/explicit rails/missing specific required item/unknown spell/invalid wearables action."
-  };
-
-  const guard = {
-    binaryFailed,
-    rangedIntentAllowed:
-      (mentionsBow(msg) && (hasBow || hasCrossbow)) ||
-      (wantsRanged(msg) && (hasBow || hasCrossbow || totalThrowable > 0)),
-    throwIntentAllowed: wantsThrow(msg) && totalThrowable > 0,
+      "Prefer 'no-roll' for ambience; 'opposed' for creature influence; 'fixed' for environment/object tests. Do not enforce binary restrictions here — tags already gate feasibility."
   };
 
   try {
@@ -400,40 +367,7 @@ Guidance:
     try { args = JSON.parse(first.function.arguments || "{}"); }
     catch { return fallback("Arbiter fallback (bad tool args)"); }
 
-    let decision = coerceDecision(args) ?? fallback("Arbiter fallback (schema mismatch)");
-
-    // ---------- Post-LLM sanity guard ----------
-    if (!guard.binaryFailed && decision.kind === "auto-fail") {
-      const reasonLC = (decision as any).reason?.toLowerCase() || "";
-
-      if (guard.rangedIntentAllowed) {
-        decision = {
-          kind: "fixed",
-          ability: "AGI",
-          reason: "Ranged action with prerequisites present; resolve with a roll.",
-          tags: ["ranged-attack", "guard:override-auto-fail"].concat(decision.tags || []),
-        };
-      } else if (guard.throwIntentAllowed) {
-        decision = {
-          kind: "fixed",
-          ability: "AGI",
-          reason: "Throwing action with prerequisites present; resolve with a roll.",
-          tags: ["throw-attack", "guard:override-auto-fail"].concat(decision.tags || []),
-        };
-      } else if (/demo|rail/.test(reasonLC) && !wantsToLeaveDemo(msg)) {
-        if (/\b(attack|strike|grab|climb|jump|push|pull|shoot|throw|tie|light|ignite)\b/i.test(msg)) {
-          decision = {
-            kind: "fixed",
-            ability: "AGI",
-            reason: "Action permitted within demo area; resolve with a roll.",
-            tags: ["guard:strip-spurious-rail"].concat(decision.tags || []),
-          };
-        } else {
-          decision = { kind: "no-roll", reason: "Ambient within demo area.", tags: ["guard:strip-spurious-rail"].concat(decision.tags || []) };
-        }
-      }
-    }
-
+    const decision = coerceDecision(args) ?? fallback("Arbiter fallback (schema mismatch)");
     return decision;
   } catch {
     return fallback("Arbiter fallback (request failed)");
