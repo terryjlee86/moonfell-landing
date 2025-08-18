@@ -3,10 +3,10 @@
 // Slim AI-first Rolls DM:
 // - Loads rolls_rules.md (all guidance lives there)
 // - Sends player message + feeds to the LLM
-// - Expects a single JSON decision (no-roll | auto-success | auto-fail | fixed | opposed)
+// - Expects a JSON decision (no-roll | auto-success | auto-fail | fixed | opposed)
 // - Returns the decision (with reason + tags) for the caller to debug/log
 //
-// Feeds = ground truth; rules.md = the brain.
+// Schema is relaxed to avoid constant fallback. Always returns something.
 
 import fs from "fs";
 import path from "path";
@@ -30,12 +30,17 @@ export type Ability = "STR" | "AGI" | "END" | "INT" | "WIL" | "CHA";
 export type DCHint = "easy" | "standard" | "hard" | "heroic";
 export type Defender = "creature" | "environment" | "player";
 
-export type ArbiterDecision =
-  | { kind: "no-roll"; reason: string; tags?: string[] }
-  | { kind: "auto-success"; reason: string; tags?: string[] }
-  | { kind: "auto-fail"; reason: string; tags?: string[] }
-  | { kind: "fixed"; ability: Ability; dcHint?: DCHint; context?: string; reason: string; tags?: string[] }
-  | { kind: "opposed"; attackerAbility: Ability; defender: Defender; context?: string; reason: string; tags?: string[] };
+export type ArbiterDecision = {
+  kind: "no-roll" | "auto-success" | "auto-fail" | "fixed" | "opposed";
+  reason: string;
+  tags?: string[];
+  // optional depending on kind:
+  ability?: Ability;
+  dcHint?: DCHint;
+  context?: string;
+  attackerAbility?: Ability;
+  defender?: Defender;
+};
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -58,71 +63,29 @@ function fallback(reason: string): ArbiterDecision {
   return { kind: "no-roll", reason, tags: ["arbiter-fallback"] };
 }
 
-// --- relaxed coerceDecision ---
+// --- RELAXED COERCION ---
 function coerceDecision(obj: any): ArbiterDecision | null {
-  if (!obj || typeof obj !== "object" || typeof obj.kind !== "string" || typeof obj.reason !== "string") {
-    return null;
+  if (!obj || typeof obj !== "object") return null;
+  if (typeof obj.kind !== "string" || typeof obj.reason !== "string") {
+    return { kind: "no-roll", reason: "Malformed response", tags: ["arbiter-fallback"] };
   }
 
-  const tags = Array.isArray(obj.tags)
-    ? obj.tags.filter((t: any) => typeof t === "string")
-    : undefined;
+  // Normalise tags
+  const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
 
-  // Normalise abilities (relax schema)
-  const normaliseAbility = (a: any): Ability | undefined => {
-    if (!a || typeof a !== "string") return undefined;
-    const map: Record<string, Ability> = {
-      strength: "STR",
-      str: "STR",
-      agility: "AGI",
-      agi: "AGI",
-      endurance: "END",
-      end: "END",
-      intelligence: "INT",
-      int: "INT",
-      willpower: "WIL",
-      will: "WIL",
-      charisma: "CHA",
-      cha: "CHA",
-    };
-    const key = a.toLowerCase();
-    return map[key] ?? (["STR","AGI","END","INT","WIL","CHA"].includes(a) ? (a as Ability) : undefined);
+  const decision: ArbiterDecision = {
+    kind: obj.kind,
+    reason: obj.reason,
+    tags,
   };
 
-  switch (obj.kind) {
-    case "no-roll":
-    case "auto-success":
-    case "auto-fail":
-      return { kind: obj.kind, reason: obj.reason, tags };
+  if (obj.ability) decision.ability = obj.ability;
+  if (obj.dcHint) decision.dcHint = obj.dcHint;
+  if (obj.context) decision.context = obj.context;
+  if (obj.attackerAbility) decision.attackerAbility = obj.attackerAbility;
+  if (obj.defender) decision.defender = obj.defender;
 
-    case "fixed": {
-      const ability = normaliseAbility(obj.ability);
-      return {
-        kind: "fixed",
-        ability: ability ?? "AGI", // safe default
-        dcHint: (["easy","standard","hard","heroic"].includes(obj.dcHint) ? obj.dcHint : undefined) as DCHint | undefined,
-        context: typeof obj.context === "string" ? obj.context : undefined,
-        reason: obj.reason,
-        tags,
-      };
-    }
-
-    case "opposed": {
-      const attackerAbility = normaliseAbility(obj.attackerAbility);
-      const defender = (["creature","environment","player"].includes(obj.defender) ? obj.defender : "creature") as Defender;
-      return {
-        kind: "opposed",
-        attackerAbility: attackerAbility ?? "AGI",
-        defender,
-        context: typeof obj.context === "string" ? obj.context : undefined,
-        reason: obj.reason,
-        tags,
-      };
-    }
-
-    default:
-      return null;
-  }
+  return decision;
 }
 
 export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecision> {
@@ -141,36 +104,27 @@ export async function getRollDecision(input: ArbiterInput): Promise<ArbiterDecis
   };
 
   const system = `
-You are the Moonfell **Rolls DM**. Your job is to classify the player's action into:
+You are the Moonfell **Rolls DM**.
+Your job is to classify the player's action into:
 - "no-roll" (pure ambience / no consequence intended)
 - "auto-success" (trivial, always succeeds)
-- "auto-fail" (physically impossible OR explicitly missing required capability/item/spell)
-- "fixed" (test vs environment with a set difficulty; choose ability: STR/AGI/END/INT/WIL/CHA; optional dcHint: easy/standard/hard/heroic)
-- "opposed" (contest vs another agent/creature; choose attackerAbility; defender=creature/environment/player)
+- "auto-fail" (physically impossible OR explicitly missing required item/spell)
+- "fixed" (test vs environment; ability: STR/AGI/END/INT/WIL/CHA; optional dcHint: easy/standard/hard/heroic)
+- "opposed" (contest vs another agent; attackerAbility; defender=creature/environment/player)
 
-All reasoning rules and examples are provided below. DO NOT invent inventory; rely on provided tags. Be concise and return JSON only.
+All reasoning rules and examples are below. DO NOT invent inventory; rely on provided tags. 
+Return JSON only.
 `.trim();
 
   const user = `
-# ROLLS RULES (authoritative)
+# ROLLS RULES
 ${rules}
 
 # INPUT
 ${JSON.stringify(payload, null, 2)}
 
 # OUTPUT FORMAT (JSON ONLY)
-{
-  "kind": "no-roll" | "auto-success" | "auto-fail" | "fixed" | "opposed",
-  "reason": "short, plain language why",
-  "tags": ["optional","tags","for","debug"],
-  "ability": "STR" | "AGI" | "END" | "INT" | "WIL" | "CHA",
-  "dcHint": "easy" | "standard" | "hard" | "heroic",
-  "context": "optional string",
-  "attackerAbility": "STR" | "AGI" | "END" | "INT" | "WIL" | "CHA",
-  "defender": "creature" | "environment" | "player"
-}
-
-Return ONLY the JSON object, nothing else.
+{ "kind": "...", "reason": "...", "tags": ["..."], ... }
 `.trim();
 
   try {
@@ -198,8 +152,7 @@ Return ONLY the JSON object, nothing else.
     let parsed: any;
     try { parsed = JSON.parse(raw); } catch { return fallback("Arbiter fallback (bad JSON)"); }
 
-    const decision = coerceDecision(parsed);
-    return decision ?? fallback("Arbiter fallback (schema mismatch)");
+    return coerceDecision(parsed) ?? fallback("Arbiter fallback (schema mismatch)");
   } catch {
     return fallback("Arbiter fallback (request failed)");
   }
