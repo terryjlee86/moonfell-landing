@@ -7,6 +7,7 @@
 // - Returns the decision (with reason + tags) for the caller to debug/log
 //
 // Schema is relaxed to avoid constant fallback. Always returns something.
+// If AI JSON is malformed or incomplete, add "arbiter-relaxed" tag.
 
 import fs from "fs";
 import path from "path";
@@ -67,11 +68,11 @@ function fallback(reason: string): ArbiterDecision {
 function coerceDecision(obj: any): ArbiterDecision | null {
   if (!obj || typeof obj !== "object") return null;
   if (typeof obj.kind !== "string" || typeof obj.reason !== "string") {
-    return { kind: "no-roll", reason: "Malformed response", tags: ["arbiter-fallback"] };
+    return { kind: "no-roll", reason: "Malformed response", tags: ["arbiter-fallback", "arbiter-relaxed"] };
   }
 
-  // Normalise tags
-  const tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : undefined;
+  let tags = Array.isArray(obj.tags) ? obj.tags.filter((t: any) => typeof t === "string") : [];
+  let relaxed = false;
 
   const decision: ArbiterDecision = {
     kind: obj.kind,
@@ -79,11 +80,15 @@ function coerceDecision(obj: any): ArbiterDecision | null {
     tags,
   };
 
-  if (obj.ability) decision.ability = obj.ability;
+  if (obj.ability) decision.ability = obj.ability; else relaxed = true;
   if (obj.dcHint) decision.dcHint = obj.dcHint;
   if (obj.context) decision.context = obj.context;
-  if (obj.attackerAbility) decision.attackerAbility = obj.attackerAbility;
-  if (obj.defender) decision.defender = obj.defender;
+  if (obj.attackerAbility) decision.attackerAbility = obj.attackerAbility; else if (obj.kind === "opposed") relaxed = true;
+  if (obj.defender) decision.defender = obj.defender; else if (obj.kind === "opposed") relaxed = true;
+
+  if (relaxed) {
+    decision.tags = [...(decision.tags ?? []), "arbiter-relaxed"];
+  }
 
   return decision;
 }
@@ -109,7 +114,7 @@ Your job is to classify the player's action into:
 - "no-roll" (pure ambience / no consequence intended)
 - "auto-success" (trivial, always succeeds)
 - "auto-fail" (physically impossible OR explicitly missing required item/spell)
-- "fixed" (test vs environment; ability: STR/AGI/END/INT/WIL/CHA; optional dcHint: easy/standard/hard/heroic)
+- "fixed" (test vs environment; ability: STR/AGI/END/INT/WIL/CHA; optional dcHint)
 - "opposed" (contest vs another agent; attackerAbility; defender=creature/environment/player)
 
 All reasoning rules and examples are below. DO NOT invent inventory; rely on provided tags. 
@@ -150,7 +155,7 @@ ${JSON.stringify(payload, null, 2)}
     const raw = jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text;
 
     let parsed: any;
-    try { parsed = JSON.parse(raw); } catch { return fallback("Arbiter fallback (bad JSON)"); }
+    try { parsed = JSON.parse(raw); } catch { return fallback("Arbiter fallback (bad JSON)") }
 
     return coerceDecision(parsed) ?? fallback("Arbiter fallback (schema mismatch)");
   } catch {
