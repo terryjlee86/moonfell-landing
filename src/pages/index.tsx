@@ -42,6 +42,11 @@ function useUTM() {
       if (v) obj[k] = v;
     });
     set(obj);
+
+    // Persist for later submissions
+    try {
+      localStorage.setItem("moonfell_utm", JSON.stringify(obj));
+    } catch {}
   }, []);
   return utm;
 }
@@ -63,11 +68,21 @@ export default function Home() {
     setErr("");
 
     const f = e.currentTarget as any;
+
+    // Fallback to persisted UTM if hook is empty
+    let utmPayload = utm;
+    try {
+      if (!utmPayload || Object.keys(utmPayload).length === 0) {
+        const fromStorage = JSON.parse(localStorage.getItem("moonfell_utm") || "{}");
+        if (fromStorage && typeof fromStorage === "object") utmPayload = fromStorage;
+      }
+    } catch {}
+
     const data = {
       name: f.name.value.trim(),
       email: f.email.value.trim(),
       consent: f.consent.checked,
-      utm,
+      utm: utmPayload,
       hp: f.website.value, // honeypot
     };
 
@@ -105,7 +120,8 @@ export default function Home() {
       {/* ========================= HERO ========================= */}
       <section className="relative isolate">
         {/* Fixed-height wrapper ensures full-bleed background renders */}
-        <div className="relative w-full h-[70vh] md:h-[82vh]">
+        {/* Reduced height so the signup is brought above the fold */}
+        <div className="relative w-full h-[56vh] md:h-[62vh]">
           {/* Desktop background */}
           <div className="hidden md:block absolute inset-0 -z-10">
             <Image
@@ -135,7 +151,8 @@ export default function Home() {
         </div>
 
         {/* Foreground copy pulled upward over the background */}
-        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
+        {/* Adjusted negative margin to match reduced hero height */}
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[44vh] md:-mt-[50vh] pb-6 md:pb-8">
           <div className="max-w-[720px]">
             {/* LOGO wordmark (left-aligned) — large */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -155,33 +172,53 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ========================= SIGNUP (below hero) ========================= */}
-      <section id="signup" className="mx-auto max-w-[900px] px-5 mt-48 sm:mt-56 md:mt-72 lg:mt-80 mb-10">
+      {/* ========================= SIGNUP (pulled up) ========================= */}
+      {/* Reduced top margins substantially so inputs sit above the fold on common viewports */}
+      <section id="signup" className="mx-auto max-w-[900px] px-5 mt-6 sm:mt-8 md:mt-10 lg:mt-12 mb-10">
         <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
           <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
+
           {status === "ok" ? (
-            <p className="mt-2 text-[var(--muted)]">Thanks! Check your inbox to confirm your email.</p>
+            <p className="mt-2 text-[var(--muted)]" aria-live="polite">
+              Thanks! Check your inbox to confirm your email.
+            </p>
           ) : (
-            <form onSubmit={onSubmit} className="mt-3">
+            <form onSubmit={onSubmit} className="mt-3" noValidate>
               <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                  type="text"
-                  name="name"
-                  placeholder="Name (optional)"
-                  autoComplete="name"
-                />
-                <input
-                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                  type="email"
-                  name="email"
-                  placeholder="Email"
-                  autoComplete="email"
-                  required
-                />
+                <div className="flex-1">
+                  <label htmlFor="name" className="sr-only">
+                    Name
+                  </label>
+                  <input
+                    id="name"
+                    className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                    type="text"
+                    name="name"
+                    placeholder="Name (optional)"
+                    autoComplete="name"
+                  />
+                </div>
+
+                <div className="flex-1">
+                  <label htmlFor="email" className="sr-only">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                    type="email"
+                    name="email"
+                    placeholder="Email"
+                    autoComplete="email"
+                    required
+                    inputMode="email"
+                  />
+                </div>
+
                 <button
                   disabled={status === "loading"}
                   className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
+                  aria-busy={status === "loading" ? "true" : "false"}
                 >
                   {status === "loading" ? "Joining…" : "Join the Frontier"}
                 </button>
@@ -190,15 +227,22 @@ export default function Home() {
               {/* honeypot */}
               <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
 
-              <label className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
-                <input type="checkbox" name="consent" required />
+              <label htmlFor="consent" className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
+                <input id="consent" type="checkbox" name="consent" required />
                 <span>
                   I agree to receive updates about Moonfell and accept the{" "}
-                  <a className="underline" href="/privacy">Privacy Policy</a>.
+                  <a className="underline" href="/privacy">
+                    Privacy Policy
+                  </a>
+                  .
                 </span>
               </label>
 
-              {status === "err" && <small className="mt-2 block text-red-300">{err}</small>}
+              {status === "err" && (
+                <small className="mt-2 block text-red-300" role="alert">
+                  {err}
+                </small>
+              )}
             </form>
           )}
 
@@ -209,6 +253,7 @@ export default function Home() {
               href="https://discord.gg/hdafA58Nn"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Join our Discord Community (opens in a new tab)"
               className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
             >
               Join our Discord Community
@@ -216,7 +261,13 @@ export default function Home() {
           </div>
 
           <small className="mt-2 block text-[var(--muted)]">
-            <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
+            <a className="underline" href="/privacy">
+              Privacy
+            </a>{" "}
+            ·{" "}
+            <a className="underline" href="/terms">
+              Terms
+            </a>
           </small>
         </div>
       </section>
@@ -260,16 +311,23 @@ export default function Home() {
 
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
-          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
-          <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
-          <li><strong>Unscripted</strong> — No fixed choices. Creativity matters.</li>
+          <li>
+            <strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.
+          </li>
+          <li>
+            <strong>Responsive</strong> — Every action is tested against stats, skills, and environment.
+          </li>
+          <li>
+            <strong>Unscripted</strong> — No fixed choices. Creativity matters.
+          </li>
         </ul>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
           <div>
             <h3 className="text-lg font-semibold">Combat Freedom</h3>
             <p className="mt-1 text-[var(--muted)]">
-              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re pulled in.
+              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re
+              pulled in.
             </p>
           </div>
           <div>
@@ -301,7 +359,8 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">What is Moonfell?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds using rules, stats and dice under the hood.
+                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds
+                using rules, stats and dice under the hood.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
@@ -313,13 +372,15 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it really single-player but a shared world?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no real-time multiplayer).
+                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no
+                real-time multiplayer).
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it text-only?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
+                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in
+                stats, skills, distance, light/noise, and dice.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
