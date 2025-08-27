@@ -2,7 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { gaEvent, fbqEvent } from "../lib/analytics";
-import Hero from "../components/Hero";
+import Hero from "../components/Hero"; // relative import to avoid TS2307 alias issues
 
 /** FEATURE IMAGES */
 const FEATURE_IMAGES = [
@@ -112,18 +112,17 @@ export default function Home() {
 
   return (
     <main className="bg-[var(--bg)] text-[var(--fg)]">
-      {/* ========================= HERO (now a component) ========================= */}
-      {/* Keep this wrapper so the overlay positions identically */}
-      <section className="relative isolate">
+      {/* ========================= HERO (component) ========================= */}
+      <section className="relative isolate z-0">
         <Hero />
 
-        {/* ========================= SIGNUP OVERLAY (unchanged) ========================= */}
+        {/* ========================= SIGNUP OVERLAY (z-boost) ========================= */}
         <div
           id="signup"
           className="
             pointer-events-auto
             absolute inset-x-0 md:inset-x-auto
-            z-10
+            z-50
             px-5
             bottom-6 sm:bottom-8 md:bottom-10
           "
@@ -357,12 +356,8 @@ export default function Home() {
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-8 text-sm text-white/80 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Moonfell. All rights reserved.</p>
           <nav className="flex gap-5">
-            <a className="hover:text-white" href="/privacy">
-              Privacy
-            </a>
-            <a className="hover:text-white" href="/terms">
-              Terms
-            </a>
+            <a className="hover:text-white" href="/privacy">Privacy</a>
+            <a className="hover:text-white" href="/terms">Terms</a>
           </nav>
         </div>
       </footer>

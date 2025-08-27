@@ -2,12 +2,12 @@
 import Image from "next/image";
 
 const HERO_DESKTOP = "/images/hero/Desktop/Hero1D.webp";
-const HERO_MOBILE  = "/images/hero/Mobile/Hero1M.webp";
+const HERO_MOBILE = "/images/hero/Mobile/Hero1M.webp";
 
 export default function Hero() {
   return (
     <>
-      <div className="relative w-full h-[70vh] md:h-[82vh]">
+      <div className="relative z-0 w-full h-[70vh] md:h-[82vh]">
         {/* Desktop background */}
         <div className="hidden md:block absolute inset-0 -z-10">
           <Image
@@ -18,7 +18,7 @@ export default function Hero() {
             sizes="100vw"
             className="object-cover object-top"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/70" />
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-black/55 via-black/35 to-black/70" />
         </div>
 
         {/* Mobile background */}
@@ -31,11 +31,11 @@ export default function Hero() {
             sizes="100vw"
             className="object-cover object-top"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/75" />
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-black/60 via-black/40 to-black/75" />
         </div>
 
         {/* Foreground copy */}
-        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 pt-10 md:pt-14">
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 pt-10 md:pt-14 z-0">
           <div className="max-w-[720px]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -54,7 +54,7 @@ export default function Hero() {
         </div>
 
         {/* Soft fade into page */}
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-24 z-0 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
       </div>
     </>
   );
