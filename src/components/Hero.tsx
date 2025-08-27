@@ -56,7 +56,7 @@ export default function Hero({ children }: PropsWithChildren) {
       {/* Soft fade into page */}
       <div className="absolute inset-x-0 bottom-0 h-24 z-0 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
 
-      {/* 🔹 Render any overlay children on top of the hero */}
+      {/* Overlay slot */}
       {children}
     </div>
   );
