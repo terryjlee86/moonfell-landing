@@ -43,7 +43,6 @@ function useUTM() {
     });
     set(obj);
 
-    // Persist for later submissions
     try {
       localStorage.setItem("moonfell_utm", JSON.stringify(obj));
     } catch {}
@@ -56,7 +55,6 @@ export default function Home() {
   const [err, setErr] = useState<string>("");
   const utm = useUTM();
 
-  // Discord micro-conversion
   const handleDiscordClick = () => {
     gaEvent("click_discord", { location: "signup_card", page: "landing" });
     fbqEvent("Contact");
@@ -69,7 +67,6 @@ export default function Home() {
 
     const f = e.currentTarget as any;
 
-    // Fallback to persisted UTM if hook is empty
     let utmPayload = utm;
     try {
       if (!utmPayload || Object.keys(utmPayload).length === 0) {
@@ -86,7 +83,6 @@ export default function Home() {
       hp: f.website.value, // honeypot
     };
 
-    // Bot honeypot — pretend success, do not fire analytics
     if (data.hp) {
       setStatus("ok");
       return;
@@ -102,7 +98,6 @@ export default function Home() {
       setStatus(r.ok ? "ok" : "err");
 
       if (r.ok) {
-        // Fire analytics ONLY on real, successful subscription
         gaEvent("signup", { method: "beehiiv" });
         fbqEvent("CompleteRegistration");
       } else {
@@ -119,10 +114,8 @@ export default function Home() {
     <main className="bg-[var(--bg)] text-[var(--fg)]">
       {/* ========================= HERO ========================= */}
       <section className="relative isolate">
-        {/* Fixed-height wrapper ensures full-bleed background renders */}
-        {/* Reduced height so the signup is brought above the fold */}
         <div className="relative w-full h-[56vh] md:h-[62vh]">
-          {/* Desktop background */}
+          {/* Desktop */}
           <div className="hidden md:block absolute inset-0 -z-10">
             <Image
               src={HERO_DESKTOP}
@@ -134,7 +127,7 @@ export default function Home() {
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/70" />
           </div>
-          {/* Mobile background */}
+          {/* Mobile */}
           <div className="md:hidden absolute inset-0 -z-10">
             <Image
               src={HERO_MOBILE}
@@ -146,16 +139,12 @@ export default function Home() {
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/75" />
           </div>
-          {/* Soft fade into page to avoid harsh cut */}
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
         </div>
 
-        {/* Foreground copy pulled upward over the background */}
-        {/* Adjusted negative margin to match reduced hero height */}
-        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[44vh] md:-mt-[50vh] pb-6 md:pb-8">
-          <div className="max-w-[720px]">
-            {/* LOGO wordmark (left-aligned) — large */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* Foreground copy pulled upward */}
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[44vh] md:-mt-[50vh] pb-6 md:pb-8 flex justify-start">
+          <div className="max-w-[720px] text-left">
             <img
               src="/logo-moonfell.svg"
               alt="Moonfell"
@@ -165,19 +154,15 @@ export default function Home() {
             <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-white">
               Write your legend into the wilds.
             </h1>
-            <p className="mt-3 text-lg md:text-xl text-white/90">
-              Limitless actions in a world that reacts with logic and law.
-            </p>
+            {/* Removed "Limitless actions..." paragraph */}
           </div>
         </div>
       </section>
 
-      {/* ========================= SIGNUP (pulled up) ========================= */}
-      {/* Reduced top margins substantially so inputs sit above the fold on common viewports */}
+      {/* ========================= SIGNUP ========================= */}
       <section id="signup" className="mx-auto max-w-[900px] px-5 mt-6 sm:mt-8 md:mt-10 lg:mt-12 mb-10">
         <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
           <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
-
           {status === "ok" ? (
             <p className="mt-2 text-[var(--muted)]" aria-live="polite">
               Thanks! Check your inbox to confirm your email.
@@ -186,9 +171,7 @@ export default function Home() {
             <form onSubmit={onSubmit} className="mt-3" noValidate>
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="flex-1">
-                  <label htmlFor="name" className="sr-only">
-                    Name
-                  </label>
+                  <label htmlFor="name" className="sr-only">Name</label>
                   <input
                     id="name"
                     className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
@@ -198,11 +181,8 @@ export default function Home() {
                     autoComplete="name"
                   />
                 </div>
-
                 <div className="flex-1">
-                  <label htmlFor="email" className="sr-only">
-                    Email
-                  </label>
+                  <label htmlFor="email" className="sr-only">Email</label>
                   <input
                     id="email"
                     className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
@@ -214,7 +194,6 @@ export default function Home() {
                     inputMode="email"
                   />
                 </div>
-
                 <button
                   disabled={status === "loading"}
                   className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
@@ -223,30 +202,17 @@ export default function Home() {
                   {status === "loading" ? "Joining…" : "Join the Frontier"}
                 </button>
               </div>
-
-              {/* honeypot */}
               <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
-
               <label htmlFor="consent" className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
                 <input id="consent" type="checkbox" name="consent" required />
                 <span>
                   I agree to receive updates about Moonfell and accept the{" "}
-                  <a className="underline" href="/privacy">
-                    Privacy Policy
-                  </a>
-                  .
+                  <a className="underline" href="/privacy">Privacy Policy</a>.
                 </span>
               </label>
-
-              {status === "err" && (
-                <small className="mt-2 block text-red-300" role="alert">
-                  {err}
-                </small>
-              )}
+              {status === "err" && <small className="mt-2 block text-red-300" role="alert">{err}</small>}
             </form>
           )}
-
-          {/* Discord (permanent invite) */}
           <div className="mt-4">
             <a
               onClick={handleDiscordClick}
@@ -259,15 +225,8 @@ export default function Home() {
               Join our Discord Community
             </a>
           </div>
-
           <small className="mt-2 block text-[var(--muted)]">
-            <a className="underline" href="/privacy">
-              Privacy
-            </a>{" "}
-            ·{" "}
-            <a className="underline" href="/terms">
-              Terms
-            </a>
+            <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
           </small>
         </div>
       </section>
@@ -308,26 +267,17 @@ export default function Home() {
           Describe your intent in your own words. Moonfell resolves outcomes with stats, distance, timing, light and noise,
           and the instincts of every creature in play. The result is simulation first — narrative second.
         </p>
-
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
-          <li>
-            <strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.
-          </li>
-          <li>
-            <strong>Responsive</strong> — Every action is tested against stats, skills, and environment.
-          </li>
-          <li>
-            <strong>Unscripted</strong> — No fixed choices. Creativity matters.
-          </li>
+          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
+          <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
+          <li><strong>Unscripted</strong> — No fixed choices. Creativity matters.</li>
         </ul>
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
           <div>
             <h3 className="text-lg font-semibold">Combat Freedom</h3>
             <p className="mt-1 text-[var(--muted)]">
-              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re
-              pulled in.
+              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re pulled in.
             </p>
           </div>
           <div>
@@ -359,8 +309,7 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">What is Moonfell?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds
-                using rules, stats and dice under the hood.
+                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds using rules, stats and dice under the hood.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
@@ -372,15 +321,13 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it really single-player but a shared world?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no
-                real-time multiplayer).
+                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no real-time multiplayer).
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it text-only?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in
-                stats, skills, distance, light/noise, and dice.
+                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
