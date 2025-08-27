@@ -174,7 +174,7 @@ export default function Home() {
               absolute inset-x-0
               z-50
               px-5
-              bottom-24 sm:bottom-28 md:bottom-32
+              bottom-0 sm:bottom-1 md:bottom-2
               flex justify-center
             "
           >
