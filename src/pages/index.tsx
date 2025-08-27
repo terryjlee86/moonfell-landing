@@ -265,7 +265,7 @@ export default function Home() {
         </h2>
         <p className="mt-2">
           Describe your intent in your own words. Moonfell resolves outcomes with stats, distance, timing, light and noise,
-          and the instincts of every creature in play. The result is simulation first — narrative second.
+          and the instincts of every creature in play. The result is simulation first, narrative second.
         </p>
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
@@ -277,19 +277,19 @@ export default function Home() {
           <div>
             <h3 className="text-lg font-semibold">Combat Freedom</h3>
             <p className="mt-1 text-[var(--muted)]">
-              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re pulled in.
+              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough it works. If not, you’re pulled in.
             </p>
           </div>
           <div>
             <h3 className="text-lg font-semibold">Environment Interaction</h3>
             <p className="mt-1 text-[var(--muted)]">
-              Cut a rope bridge, stake it, and swing across — if timing and grip checks pass. Fail, and the gorge decides.
+              Cut a rope bridge, stake it, and swing across, if timing and grip checks pass. Fail, and the gorge decides.
             </p>
           </div>
           <div>
             <h3 className="text-lg font-semibold">Dynamic Conversation</h3>
             <p className="mt-1 text-[var(--muted)]">
-              Say anything. Persuasion rolls test Charisma against willpower and wit — and critical failures can turn tempers.
+              Say anything. Persuasion rolls test Charisma against willpower, wit and critical failures can turn tempers.
             </p>
           </div>
           <div>
