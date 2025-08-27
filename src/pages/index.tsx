@@ -167,18 +167,16 @@ export default function Home() {
         </div>
 
         {/* ========================= SIGNUP OVERLAY ========================= */}
-        {/* This overlay floats above the hero fade. Adjust bottom/left/right to move independently. */}
+        {/* Centered vertically over the hero fade; clicks pass through correctly */}
         <div
           id="signup"
           className="
-            pointer-events-auto
-            absolute inset-x-0 md:inset-x-auto
-            z-10
-            px-5
-            bottom-6 sm:bottom-8 md:bottom-10
+            absolute inset-0 z-50 px-5
+            flex items-center justify-center
+            pointer-events-none
           "
         >
-          <div className="mx-auto md:ml-[calc((100%-1200px)/2+0.5rem)] md:mx-0 max-w-[900px] md:max-w-[560px]">
+          <div className="w-full max-w-[560px] pointer-events-auto">
             <div className="rounded-2xl border border-white/10 bg-black/70 backdrop-blur p-5 sm:p-6 shadow-2xl">
               <h2 className="text-xl sm:text-2xl font-semibold text-white">The frontier opens soon.</h2>
 
@@ -190,9 +188,7 @@ export default function Home() {
                 <form onSubmit={onSubmit} className="mt-3" noValidate>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <div className="flex-1">
-                      <label htmlFor="name" className="sr-only">
-                        Name
-                      </label>
+                      <label htmlFor="name" className="sr-only">Name</label>
                       <input
                         id="name"
                         className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
@@ -204,9 +200,7 @@ export default function Home() {
                     </div>
 
                     <div className="flex-1">
-                      <label htmlFor="email" className="sr-only">
-                        Email
-                      </label>
+                      <label htmlFor="email" className="sr-only">Email</label>
                       <input
                         id="email"
                         className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
@@ -235,10 +229,7 @@ export default function Home() {
                     <input id="consent" type="checkbox" name="consent" required />
                     <span>
                       I agree to receive updates about Moonfell and accept the{" "}
-                      <a className="underline" href="/privacy">
-                        Privacy Policy
-                      </a>
-                      .
+                      <a className="underline" href="/privacy">Privacy Policy</a>.
                     </span>
                   </label>
 
@@ -265,13 +256,7 @@ export default function Home() {
               </div>
 
               <small className="mt-2 block text-[var(--muted)]">
-                <a className="underline" href="/privacy">
-                  Privacy
-                </a>{" "}
-                ·{" "}
-                <a className="underline" href="/terms">
-                  Terms
-                </a>
+                <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
               </small>
             </div>
           </div>
@@ -320,15 +305,9 @@ export default function Home() {
 
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
-          <li>
-            <strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.
-          </li>
-          <li>
-            <strong>Responsive</strong> — Every action is tested against stats, skills, and environment.
-          </li>
-          <li>
-            <strong>Unscripted</strong> — No fixed choices. Creativity matters.
-          </li>
+          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
+          <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
+          <li><strong>Unscripted</strong> — No fixed choices. Creativity matters.</li>
         </ul>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
@@ -413,5 +392,5 @@ export default function Home() {
         </div>
       </footer>
     </main>
-  ); 
+  );
 }
