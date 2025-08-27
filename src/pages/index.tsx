@@ -2,7 +2,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { gaEvent, fbqEvent } from "../lib/analytics";
-import Hero from "../components/Hero"; // relative import to avoid TS2307 alias issues
+import Hero from "../components/Hero"; // relative import to avoid TS2307
 
 /** FEATURE IMAGES */
 const FEATURE_IMAGES = [
@@ -39,9 +39,7 @@ function useUTM() {
       if (v) obj[k] = v;
     });
     set(obj);
-    try {
-      localStorage.setItem("moonfell_utm", JSON.stringify(obj));
-    } catch {}
+    try { localStorage.setItem("moonfell_utm", JSON.stringify(obj)); } catch {}
   }, []);
   return utm;
 }
@@ -51,7 +49,6 @@ export default function Home() {
   const [err, setErr] = useState<string>("");
   const utm = useUTM();
 
-  // Discord micro-conversion
   const handleDiscordClick = () => {
     gaEvent("click_discord", { location: "signup_card", page: "landing" });
     fbqEvent("Contact");
@@ -81,7 +78,6 @@ export default function Home() {
       hp: f.website.value, // honeypot
     };
 
-    // Bot honeypot — pretend success, do not fire analytics
     if (data.hp) {
       setStatus("ok");
       return;
@@ -97,7 +93,6 @@ export default function Home() {
       setStatus(r.ok ? "ok" : "err");
 
       if (r.ok) {
-        // Fire analytics ONLY on real, successful subscription
         gaEvent("signup", { method: "beehiiv" });
         fbqEvent("CompleteRegistration");
       } else {
@@ -112,119 +107,107 @@ export default function Home() {
 
   return (
     <main className="bg-[var(--bg)] text-[var(--fg)]">
-      {/* ========================= HERO (component) ========================= */}
+      {/* ========================= HERO & SIGNUP ========================= */}
       <section className="relative isolate z-0">
-        <Hero />
+        {/* Render overlay as a child of the Hero's relative container */}
+        <Hero>
+          {/* ========================= SIGNUP OVERLAY ========================= */}
+          <div
+            id="signup"
+            className="
+              pointer-events-auto
+              absolute inset-x-0 md:inset-x-auto
+              z-50
+              px-5
+              bottom-6 sm:bottom-8 md:bottom-10
+            "
+          >
+            <div className="mx-auto md:ml-[calc((100%-1200px)/2+0.5rem)] md:mx-0 max-w-[900px] md:max-w-[560px]">
+              <div className="rounded-2xl border border-white/10 bg-black/70 backdrop-blur p-5 sm:p-6 shadow-2xl">
+                <h2 className="text-xl sm:text-2xl font-semibold text-white">The frontier opens soon.</h2>
 
-        {/* ========================= SIGNUP OVERLAY (z-boost) ========================= */}
-        <div
-          id="signup"
-          className="
-            pointer-events-auto
-            absolute inset-x-0 md:inset-x-auto
-            z-50
-            px-5
-            bottom-6 sm:bottom-8 md:bottom-10
-          "
-        >
-          <div className="mx-auto md:ml-[calc((100%-1200px)/2+0.5rem)] md:mx-0 max-w-[900px] md:max-w-[560px]">
-            <div className="rounded-2xl border border-white/10 bg-black/70 backdrop-blur p-5 sm:p-6 shadow-2xl">
-              <h2 className="text-xl sm:text-2xl font-semibold text-white">The frontier opens soon.</h2>
+                {status === "ok" ? (
+                  <p className="mt-2 text-[var(--muted)]" aria-live="polite">
+                    Thanks! Check your inbox to confirm your email.
+                  </p>
+                ) : (
+                  <form onSubmit={onSubmit} className="mt-3" noValidate>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <div className="flex-1">
+                        <label htmlFor="name" className="sr-only">Name</label>
+                        <input
+                          id="name"
+                          className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                          type="text"
+                          name="name"
+                          placeholder="Name (optional)"
+                          autoComplete="name"
+                        />
+                      </div>
 
-              {status === "ok" ? (
-                <p className="mt-2 text-[var(--muted)]" aria-live="polite">
-                  Thanks! Check your inbox to confirm your email.
-                </p>
-              ) : (
-                <form onSubmit={onSubmit} className="mt-3" noValidate>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="flex-1">
-                      <label htmlFor="name" className="sr-only">
-                        Name
-                      </label>
-                      <input
-                        id="name"
-                        className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                        type="text"
-                        name="name"
-                        placeholder="Name (optional)"
-                        autoComplete="name"
-                      />
+                      <div className="flex-1">
+                        <label htmlFor="email" className="sr-only">Email</label>
+                        <input
+                          id="email"
+                          className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                          type="email"
+                          name="email"
+                          placeholder="Email"
+                          autoComplete="email"
+                          required
+                          inputMode="email"
+                        />
+                      </div>
+
+                      <button
+                        disabled={status === "loading"}
+                        className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
+                        aria-busy={status === "loading" ? "true" : "false"}
+                      >
+                        {status === "loading" ? "Joining…" : "Join the Frontier"}
+                      </button>
                     </div>
 
-                    <div className="flex-1">
-                      <label htmlFor="email" className="sr-only">
-                        Email
-                      </label>
-                      <input
-                        id="email"
-                        className="w-full rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                        type="email"
-                        name="email"
-                        placeholder="Email"
-                        autoComplete="email"
-                        required
-                        inputMode="email"
-                      />
-                    </div>
+                    {/* honeypot */}
+                    <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
 
-                    <button
-                      disabled={status === "loading"}
-                      className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
-                      aria-busy={status === "loading" ? "true" : "false"}
-                    >
-                      {status === "loading" ? "Joining…" : "Join the Frontier"}
-                    </button>
-                  </div>
+                    <label htmlFor="consent" className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
+                      <input id="consent" type="checkbox" name="consent" required />
+                      <span>
+                        I agree to receive updates about Moonfell and accept the{" "}
+                        <a className="underline" href="/privacy">Privacy Policy</a>.
+                      </span>
+                    </label>
 
-                  {/* honeypot */}
-                  <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
+                    {status === "err" && (
+                      <small className="mt-2 block text-red-300" role="alert">
+                        {err}
+                      </small>
+                    )}
+                  </form>
+                )}
 
-                  <label htmlFor="consent" className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
-                    <input id="consent" type="checkbox" name="consent" required />
-                    <span>
-                      I agree to receive updates about Moonfell and accept the{" "}
-                      <a className="underline" href="/privacy">
-                        Privacy Policy
-                      </a>
-                      .
-                    </span>
-                  </label>
+                {/* Discord (permanent invite) */}
+                <div className="mt-4">
+                  <a
+                    onClick={handleDiscordClick}
+                    href="https://discord.gg/hdafA58Nn"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Join our Discord Community (opens in a new tab)"
+                    className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
+                  >
+                    Join our Discord Community
+                  </a>
+                </div>
 
-                  {status === "err" && (
-                    <small className="mt-2 block text-red-300" role="alert">
-                      {err}
-                    </small>
-                  )}
-                </form>
-              )}
-
-              {/* Discord (permanent invite) */}
-              <div className="mt-4">
-                <a
-                  onClick={handleDiscordClick}
-                  href="https://discord.gg/hdafA58Nn"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Join our Discord Community (opens in a new tab)"
-                  className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
-                >
-                  Join our Discord Community
-                </a>
+                <small className="mt-2 block text-[var(--muted)]">
+                  <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
+                </small>
               </div>
-
-              <small className="mt-2 block text-[var(--muted)]">
-                <a className="underline" href="/privacy">
-                  Privacy
-                </a>{" "}
-                ·{" "}
-                <a className="underline" href="/terms">
-                  Terms
-                </a>
-              </small>
             </div>
           </div>
-        </div>
+        </Hero>
       </section>
 
       {/* Spacer so content doesn't collide with the floating card on short viewports */}
@@ -259,9 +242,7 @@ export default function Home() {
 
       {/* ========================= LORE / SYSTEM COPY ========================= */}
       <section className="mx-auto max-w-[900px] px-5 pb-4">
-        <h2 className="text-2xl md:text-3xl font-semibold text-[var(--accent)]">
-          A world that listens — and pushes back.
-        </h2>
+        <h2 className="text-2xl md:text-3xl font-semibold text-[var(--accent)]">A world that listens — and pushes back.</h2>
         <p className="mt-2">
           Describe your intent in your own words. Moonfell resolves outcomes with stats, distance, timing, light and noise,
           and the instincts of every creature in play. The result is simulation first — narrative second.
@@ -269,23 +250,16 @@ export default function Home() {
 
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
-          <li>
-            <strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.
-          </li>
-          <li>
-            <strong>Responsive</strong> — Every action is tested against stats, skills, and environment.
-          </li>
-          <li>
-            <strong>Unscripted</strong> — No fixed choices. Creativity matters.
-          </li>
+          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
+          <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
+          <li><strong>Unscripted</strong> — No fixed choices. Creativity matters.</li>
         </ul>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
           <div>
             <h3 className="text-lg font-semibold">Combat Freedom</h3>
             <p className="mt-1 text-[var(--muted)]">
-              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re
-              pulled in.
+              Brace on a stump and rip a spider from its web. If you’re strong, close, and quick enough — it works. If not, you’re pulled in.
             </p>
           </div>
           <div>
@@ -317,8 +291,7 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">What is Moonfell?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds
-                using rules, stats and dice under the hood.
+                Moonfell is a text-first, single-player frontier RPG. You describe actions in your own words; the world responds using rules, stats and dice under the hood.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
@@ -330,15 +303,13 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it really single-player but a shared world?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no
-                real-time multiplayer).
+                Yes. You play at your own pace, but the world persists. Changes you cause can be found by other players later (no real-time multiplayer).
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it text-only?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in
-                stats, skills, distance, light/noise, and dice.
+                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
