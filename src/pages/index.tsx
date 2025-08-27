@@ -103,6 +103,7 @@ export default function Home() {
     <main className="bg-[var(--bg)] text-[var(--fg)]">
       {/* ========================= HERO ========================= */}
       <section className="relative isolate">
+        {/* Fixed-height wrapper ensures full-bleed background renders */}
         <div className="relative w-full h-[70vh] md:h-[82vh]">
           {/* Desktop background */}
           <div className="hidden md:block absolute inset-0 -z-10">
@@ -132,7 +133,7 @@ export default function Home() {
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[var(--bg)] pointer-events-none" />
         </div>
 
-        {/* Foreground copy */}
+        {/* Foreground copy pulled upward over the background */}
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 -mt-[56vh] md:-mt-[66vh] pb-8 md:pb-12">
           <div className="max-w-[720px]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -150,73 +151,87 @@ export default function Home() {
             </p>
           </div>
         </div>
-      </section>
 
-      {/* ========================= SIGNUP (below hero) ========================= */}
-      <section id="signup" className="mx-auto max-w-[900px] px-5 mt-48 sm:mt-56 md:mt-72 lg:mt-80 mb-10">
-        <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
-          <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
-          {status === "ok" ? (
-            <p className="mt-2 text-[var(--muted)]">Thanks! Check your inbox to confirm your email.</p>
-          ) : (
-            <form onSubmit={onSubmit} className="mt-3">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                  type="text"
-                  name="name"
-                  placeholder="Name (optional)"
-                  autoComplete="name"
-                />
-                <input
-                  className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
-                  type="email"
-                  name="email"
-                  placeholder="Email"
-                  autoComplete="email"
-                  required
-                />
-                <button
-                  disabled={status === "loading"}
-                  className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
+        {/* ========================= SIGNUP OVERLAY (above the fold, over the fade) ========================= */}
+        <div
+          id="signup"
+          className="
+            absolute inset-x-0
+            bottom-6 sm:bottom-8 md:bottom-10
+            z-50
+            px-5
+          "
+        >
+          <div className="mx-auto max-w-[900px] md:max-w-[560px]">
+            <div className="rounded-2xl border border-white/10 bg-black/70 backdrop-blur p-5 sm:p-6 shadow-2xl">
+              <h2 className="text-xl sm:text-2xl font-semibold text-white">The frontier opens soon.</h2>
+
+              {status === "ok" ? (
+                <p className="mt-2 text-[var(--muted)]">Thanks! Check your inbox to confirm your email.</p>
+              ) : (
+                <form onSubmit={onSubmit} className="mt-3">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                      type="text"
+                      name="name"
+                      placeholder="Name (optional)"
+                      autoComplete="name"
+                    />
+                    <input
+                      className="flex-1 rounded-lg border border-[#2b2b2b] bg-[#121416] px-3 py-3 text-[var(--fg)]"
+                      type="email"
+                      name="email"
+                      placeholder="Email"
+                      autoComplete="email"
+                      required
+                    />
+                    <button
+                      disabled={status === "loading"}
+                      className="rounded-lg px-4 py-3 font-semibold bg-[var(--accent)] text-[#1a1714] disabled:opacity-70"
+                    >
+                      {status === "loading" ? "Joining…" : "Join the Frontier"}
+                    </button>
+                  </div>
+
+                  {/* honeypot */}
+                  <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
+
+                  <label className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
+                    <input type="checkbox" name="consent" required />
+                    <span>
+                      I agree to receive updates about Moonfell and accept the{" "}
+                      <a className="underline" href="/privacy">Privacy Policy</a>.
+                    </span>
+                  </label>
+
+                  {status === "err" && <small className="mt-2 block text-red-300">{err}</small>}
+                </form>
+              )}
+
+              <div className="mt-4">
+                <a
+                  onClick={handleDiscordClick}
+                  href="https://discord.gg/hdafA58Nn"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Join our Discord Community (opens in a new tab)"
+                  className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
                 >
-                  {status === "loading" ? "Joining…" : "Join the Frontier"}
-                </button>
+                  Join our Discord Community
+                </a>
               </div>
 
-              {/* honeypot */}
-              <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
-
-              <label className="mt-3 flex gap-2 text-sm text-[var(--muted)]">
-                <input type="checkbox" name="consent" required />
-                <span>
-                  I agree to receive updates about Moonfell and accept the{" "}
-                  <a className="underline" href="/privacy">Privacy Policy</a>.
-                </span>
-              </label>
-
-              {status === "err" && <small className="mt-2 block text-red-300">{err}</small>}
-            </form>
-          )}
-
-          {/* Discord (permanent invite) */}
-          <div className="mt-4">
-            <a
-              onClick={handleDiscordClick}
-              href="https://discord.gg/hdafA58Nn"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block rounded-lg bg-[#5865F2] px-4 py-2 font-semibold text-white hover:brightness-95"
-            >
-              Join our Discord Community
-            </a>
+              <small className="mt-2 block text-[var(--muted)]">
+                <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
+              </small>
+            </div>
           </div>
-
-          <small className="mt-2 block text-[var(--muted)]">
-            <a className="underline" href="/privacy">Privacy</a> · <a className="underline" href="/terms">Terms</a>
-          </small>
         </div>
       </section>
+
+      {/* Spacer so content doesn't collide with the floating card on short viewports */}
+      <div className="h-10 md:h-16" />
 
       {/* ========================= FEATURES ========================= */}
       <section className="py-8 sm:py-10">
