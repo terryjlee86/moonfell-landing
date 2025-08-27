@@ -172,7 +172,7 @@ export default function Home() {
             className="
               pointer-events-none
               absolute inset-x-0
-              z-50
+              z-100
               px-5
               bottom-6 sm:bottom-8 md:bottom-10
               flex justify-center
