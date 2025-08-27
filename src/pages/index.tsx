@@ -151,7 +151,7 @@ export default function Home() {
               className="h-[120px] md:h-[144px] w-auto select-none"
               draggable={false}
             />
-            <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-white">
+            <h1 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight text-white">
               Write your legend into the wilds.
             </h1>
             {/* Removed "Limitless actions..." paragraph */}
