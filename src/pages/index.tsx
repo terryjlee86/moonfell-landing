@@ -216,7 +216,7 @@ export default function Home() {
           <div className="mt-4">
             <a
               onClick={handleDiscordClick}
-              href="https://discord.gg/hdafA58Nn"
+              href="https://discord.gg/Uzg3UbKMNx"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Join our Discord Community (opens in a new tab)"
