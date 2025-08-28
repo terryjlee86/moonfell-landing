@@ -315,7 +315,7 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">How do I join the playtest?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                Add your email above. We’ll invite waitlisters in waves and send regular development updates.
+                Add your email above. We’ll invite waitlisters in waves and send regular development updates, addtionally join our discord for the best channce.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
