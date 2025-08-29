@@ -264,7 +264,7 @@ export default function Home() {
           D&D meets litRPG
         </h2>
         <p className="mt-2">
-         An incredibly vast world with deep lore to discover. A unique game allowing players to explore the depth of worlds found in litRPGs using the rules of D&D. Have you ever read a a litRPG and wanted to be part of that world and explore it yourself? Or been playing D&D and wanted to be free to explore the world on your own. Moonfell brings both experiences together in one game. 
+         An incredibly vast world with deep lore to discover. A unique game allowing players to explore the depth of worlds found in litRPGs using the rules of D&D. Have you ever read a litRPG and wanted to be part of that world and explore it yourself? Or been playing D&D and wanted to be free to explore the world on your own. Moonfell brings both experiences together in one game. 
         </p>
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
