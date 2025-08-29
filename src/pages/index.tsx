@@ -268,7 +268,7 @@ export default function Home() {
         </p>
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
-          <li><strong>Consistent</strong> — The same rules apply to you, your allies, and your enemies.</li>
+          <li><strong>Freedom</strong> — Players are given absolute freedom to interact with the world as they wish.</li>
           <li><strong>Responsive</strong> — Every action is tested against stats, skills, and environment.</li>
           <li><strong>Unscripted</strong> — No fixed choices. Creativity matters.</li>
         </ul>
