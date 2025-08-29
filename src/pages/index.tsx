@@ -261,11 +261,10 @@ export default function Home() {
       {/* ========================= LORE / SYSTEM COPY ========================= */}
       <section className="mx-auto max-w-[900px] px-5 pb-4">
         <h2 className="text-2xl md:text-3xl font-semibold text-[var(--accent)]">
-          A world that listens — and pushes back.
+          D&D meets litRPG
         </h2>
         <p className="mt-2">
-          Describe your intent in your own words. Moonfell resolves outcomes with stats, distance, timing, light and noise,
-          and the instincts of every creature in play. The result is simulation first, narrative second.
+          An incredibly vast world with deep lore to discover. A unique game allowing players to explore the depth of worlds found in litRPGs using the rules of D&D.
         </p>
         <h2 className="mt-8 text-2xl md:text-3xl font-semibold text-[var(--accent)]">The Rules of Moonfell</h2>
         <ul className="list-disc pl-6 space-y-2 mt-2">
