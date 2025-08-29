@@ -152,7 +152,7 @@ export default function Home() {
               draggable={false}
             />
             <h1 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight text-white">
-              Write your legend into the wilds.
+              A new world to explore with limitless possibilities, join the community below to follow development and the open beta.
             </h1>
             {/* Removed "Limitless actions..." paragraph */}
           </div>
