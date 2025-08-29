@@ -162,7 +162,7 @@ export default function Home() {
       {/* ========================= SIGNUP ========================= */}
       <section id="signup" className="mx-auto max-w-[900px] px-5 mt-6 sm:mt-8 md:mt-10 lg:mt-12 mb-10">
         <div className="rounded-2xl border border-white/10 bg-black/60 backdrop-blur p-5 sm:p-6 shadow-xl">
-          <h2 className="text-xl sm:text-2xl font-semibold">The frontier opens soon.</h2>
+          <h2 className="text-xl sm:text-2xl font-semibold">Join the Open Beta.</h2>
           {status === "ok" ? (
             <p className="mt-2 text-[var(--muted)]" aria-live="polite">
               Thanks! Check your inbox to confirm your email.
