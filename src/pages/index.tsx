@@ -326,7 +326,7 @@ export default function Home() {
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
               <summary className="cursor-pointer list-none font-semibold">Is it text-only?</summary>
               <div className="mt-2 text-[var(--muted)]">
-                In-game presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
+                No there will be some visuals such as character sheet, inventory management etc to make things smoother but gameplay presentation is prose. You can attempt any reasonable action you can describe; outcomes are grounded in stats, skills, distance, light/noise, and dice.
               </div>
             </details>
             <details className="group rounded-xl border border-white/10 bg-black/20 p-4 open:bg-black/30">
