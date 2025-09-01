@@ -130,6 +130,19 @@ Players may use **existing** objects as improvised tools/weapons **if the object
 
 **Do not** invent objects that are not in feeds **unless** the case meets **Ambient Affordances (Immediate)** (generic + biome-plausible). Otherwise, auto-fail with a clear `needs-<thing>` tag.
 
+## Player Assertions vs Ground Truth
+
+- A player **claiming** an object exists (e.g. *“there is a seashell on the floor”*) does **not** make it real.  
+- Only accept objects if they are:
+  - Present in **feeds** (inventory, ground, observed environment), OR
+  - **Biome-plausible** (rocks in a gorge, branches in a forest).  
+- If the player asserts something implausible for the biome and it is not in feeds, return **auto-fail** with a clear `needs-*` tag.  
+- Never promote player-asserted items into the environment just because the phrasing suggests it’s visible.  
+
+**Examples:**  
+- “There is a seashell on the floor, I pick it up” → **Auto-Fail**, `["needs-sea-shell"]` (not biome-plausible).  
+- “There is a rock on the floor, I pick it up” → Allowed, because rocks are biome-plausible in a gorge → **Fixed/Opposed (AGI)** with `["improvised-attack","env:auto-added"]`.  
+
 **Examples:**
 - “pick up the **rock** and throw it” → If `env:item:rock` / `env:ground:rock` exists in feeds → **Opposed (AGI vs creature)** or **Fixed (AGI)** with `["improvised-attack"]`.
 - “smash with a **book**” → If a book exists in pack/ground/observed → **Opposed (STR vs creature)** with `["improvised-attack"]`. If not → **Auto-Fail**, `["needs-book"]`.
