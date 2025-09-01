@@ -5,13 +5,13 @@ import path from "path";
 import forestAmbush from "../../prompts/scenarios/forest_ambush";
 import { getRollDecision, ArbiterDecision } from "../../services/rolls_dm";
 
-// NEW: bring in the feeds (safe, compact serializers)
+// Feeds (safe, compact serializers)
 import { characterFeed } from "../../feeds/character_feed";
 import { inventoryFeed } from "../../feeds/inventory_feed";
 import { contextFeed } from "../../feeds/context_feed";
 import { learnedFeed } from "../../feeds/learned_feed";
 
-// NEW: delta applier
+// Delta applier (applies Rolls DM apply_now / outcome deltas)
 import { applyDeltas, type Delta } from "../../services/delta_applier";
 
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
@@ -109,14 +109,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Choose scenario (extend later if multiple)
   const scenario = forestAmbush;
 
-  const SYSTEM_PROMPT = buildSystemPrompt(
-      scenario,
-      worldDoc,
-      encounterDoc,
-      conductorDoc,
-      systemDoc
-  );
-
   // Init: send scenario intro without spending tokens
   if (init) {
     return res.status(200).json({
@@ -129,7 +121,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!userMessage) return res.status(400).json({ error: "No message provided" });
 
   // ---------- Gather feeds (compact, prompt-safe) ----------
-  // These feeds DO NOT affect narration; they only help the Rolls DM decide feasibility.
   let arbiterDecision: ArbiterDecision | null = null;
 
   const char = characterFeed();    // { name, stance, stats, activeConditions }
@@ -152,12 +143,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
-    // NEW: apply any immediate deltas from the arbiter
+    // Apply immediate state changes proposed by the Rolls DM (if any)
     if (arbiterDecision && (arbiterDecision as any).apply_now) {
       applyDeltas(((arbiterDecision as any).apply_now as Delta[]) || []);
     }
   } catch {
     arbiterDecision = null; // never block the player flow if arbiter fails
+  }
+
+  // Build the system prompt (with a soft guard if the arbiter auto-failed)
+  let SYSTEM_PROMPT = buildSystemPrompt(
+    scenario,
+    worldDoc,
+    encounterDoc,
+    conductorDoc,
+    systemDoc
+  );
+
+  if (arbiterDecision && arbiterDecision.kind === "auto-fail") {
+    // Narration guard: don't contradict the arbiter; express failure diegetically.
+    // Keep this hidden to the player; do NOT echo tags or the word "arbiter".
+    const guard = `
+# Narration Guard (do not expose)
+An earlier rules check determined the player's last request **fails**:
+- Reason: ${arbiterDecision.reason}
+
+As the narrator:
+- Do NOT depict the impossible/missing thing as present or successful.
+- Express the failure **in fiction** (e.g., a brief search finds nothing, the attempt stalls, the path is blocked).
+- Offer **3–5** sensible alternatives that fit the current scene and the player's kit/environment.
+- Never mention rules, tags, dice, or meta. Keep tone consistent with the Conductor Guide.
+`.trim();
+    SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${guard}`;
   }
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
