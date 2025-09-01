@@ -151,7 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     arbiterDecision = null; // never block the player flow if arbiter fails
   }
 
-  // Build the system prompt (with a *specific* guard if the arbiter auto-failed)
+  // Build the system prompt
   let SYSTEM_PROMPT = buildSystemPrompt(
     scenario,
     worldDoc,
@@ -160,34 +160,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     systemDoc
   );
 
+  // Build a specific prohibition message for this turn if auto-fail with needs-*
+  const extraSystemGuards: Array<{ role: "system"; content: string }> = [];
   if (arbiterDecision && arbiterDecision.kind === "auto-fail") {
-    // Extract forbidden items from needs-* tags, e.g. ["needs-sea-shell"] -> ["sea shell"]
     const needs = (arbiterDecision.tags || [])
       .filter(t => typeof t === "string" && t.startsWith("needs-"))
       .map(t => t.slice("needs-".length).replace(/[-_]+/g, " ").trim())
       .filter(Boolean);
 
-    const forbidLines = needs.length
-      ? `- Do **NOT** depict these as present this turn: ${needs.map(n => `"${n}"`).join(", ")}`
-      : "- Do **NOT** depict the missing/blocked item as present this turn.";
-
-    const guard = `
-# Narration Guard (hidden; do not expose)
-An earlier rules check determined the player's last request **fails**:
-- Reason: ${arbiterDecision.reason}
-
-As the narrator (fiction-first):
-${forbidLines}
-- Express the failure **in-world** (e.g., a brief search finds nothing here; the attempt stalls).
-- Offer **3–5** sensible alternatives that fit the current scene and the player's kit/environment.
-- Never mention rules, tags, dice, or meta. Keep tone consistent with the Conductor Guide.
+    if (needs.length) {
+      const guard = `
+# Scene Truths (strict for this turn; do not expose)
+- The following items are **NOT present** this turn: ${needs.map(n => `"${n}"`).join(", ")}.
+- If the user claims to see any of them, treat it as **misperception**: narrate their **absence** in-world (briefly) and propose plausible alternatives (e.g., stones, branches).
+- Do **NOT** depict the forbidden items in any way this turn.
 `.trim();
-
-    SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${guard}`;
+      extraSystemGuards.push({ role: "system", content: guard });
+    }
   }
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: SYSTEM_PROMPT },
+    ...extraSystemGuards, // <<— strongly binds the forbidden nouns for this turn
     ...(Array.isArray(history) ? history.slice(-8) : []),
     { role: "user", content: userMessage },
   ];
