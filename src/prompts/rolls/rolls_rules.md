@@ -147,12 +147,20 @@ If the player references a non-existent object, return **auto-fail** with a clea
 ---
 
 ## Ambient Affordances (Immediate)
-If the player requests a **generic, low-value material** that is **obviously plausible** in the current setting (e.g., **rock/pebble/branch/stick** in a gorge/forest/road), you may add **exactly one** to the scene **immediately** so the action can proceed this turn.
+If the player requests a **generic, naturally occurring material** that is **plausible for the current biome** (e.g., common ground debris or simple natural matter), you may add **exactly one** such item to the scene **immediately** so the action can proceed this turn.
 
-- Only for **generic, ambient** materials (not gear: bows, firearms, grenades, traps, etc.).  
-- Add it as a ground item and tag `env:auto-added`.  
-- Prefer **AGI** for thrown, **STR** for blunt melee.  
-- If the material is **implausible** for the biome, return **auto-fail** with `["needs-<thing>"]`.
+**Use this only if ALL are true:**
+- **Generic**: a broad noun category (natural/low-value), not manufactured gear or a specific crafted item.
+- **Plausible**: consistent with the current setting/biome (terrain/scene tags); not out of place.
+- **Low value & low complexity**: trivial to obtain; not a quest/rare/object of economic value.
+- **Small & hand-scale**: the object can be held/thrown/used one-handed by a human.
+
+**Add as:**
+- `apply_now`: an environment add of **one** such item at ground, tagged `env:auto-added` (and any obvious affordances like `"throwable"` if appropriate), then any inventory move needed to use it **this turn**.
+- Choose roll type by fiction (thrown → usually **AGI**; blunt melee → usually **STR**).
+- If the material is **implausible** for the biome (or not generic), **auto-fail** with `["needs-<thing>"]`.
+
+> This rule is **category-based**. Do not name or enumerate items; reason from biome plausibility and genericness.
 
 **Example:** “pick up a rock and throw it” in a gorge → **Opposed (AGI vs creature)**; add one rock to ground (see delta fields below).
 
