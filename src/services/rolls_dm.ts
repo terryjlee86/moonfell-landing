@@ -138,19 +138,17 @@ ${JSON.stringify(payload, null, 2)}
         parameters: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["no-roll", "auto-success", "auto-fail", "fixed", "opposed"] },
+            kind: { type: "string" },
             reason: { type: "string" },
             tags: { type: "array", items: { type: "string" } },
-            // fixed
-            ability: { type: "string", enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"] },
-            dcHint: { type: "string", enum: ["easy", "standard", "hard", "heroic"] },
+            ability: { type: "string" },
+            dcHint: { type: "string" },
             context: { type: "string" },
-            // opposed
-            attackerAbility: { type: "string", enum: ["STR", "AGI", "END", "INT", "WIL", "CHA"] },
-            defender: { type: "string", enum: ["creature", "environment", "player"] },
+            attackerAbility: { type: "string" },
+            defender: { type: "string" },
           },
           required: ["kind", "reason"],
-          additionalProperties: true, // allow model wiggle room
+          additionalProperties: true, // relaxed: allow wiggle room
         },
       },
     },

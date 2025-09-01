@@ -3,7 +3,7 @@
 // Universal delta applier for Moonfell.
 // Applies small, structured state changes to Environment + Inventory.
 // Safe to call from Rolls DM decisions (apply_now/on_success/on_failure),
-// narrator observers, or action-resolution code.
+// narrator observers, or action-resolution code. Now logs each applied delta.
 
 import { upsertEnvItem, removeQty as envRemoveQty } from "../state/environment";
 import { getInventory, setInventory } from "../state/inventory";
@@ -127,6 +127,29 @@ function consumeAny(inv: InvState, itemIdOrName: string, qty = 1): boolean {
   return remaining === 0;
 }
 
+// ---------- Simple logger (ring buffer) ----------
+
+const _log: string[] = [];
+const _LOG_MAX = 50;
+
+function pushLog(line: string) {
+  _log.push(line);
+  if (_log.length > _LOG_MAX) _log.shift();
+  // also print to server logs so you see it immediately
+  // eslint-disable-next-line no-console
+  console.log(line);
+}
+
+/** Optional: get the last N applied-delta lines (for UI debug if you want) */
+export function getDeltaLog(lastN = 20): string[] {
+  if (lastN >= _log.length) return [..._log];
+  return _log.slice(_log.length - lastN);
+}
+/** Optional: clear the in-memory delta log */
+export function clearDeltaLog() {
+  _log.length = 0;
+}
+
 // ---------- Apply deltas ----------
 
 export function applyDeltas(deltas: Delta[] | undefined | null): { applied: Delta[]; errors: string[] } {
@@ -148,12 +171,14 @@ export function applyDeltas(deltas: Delta[] | undefined | null): { applied: Delt
             tags: d.tags ?? [],
           });
           applied.push(d);
+          pushLog(`Δ env:add ${d.slug}@${d.where} x${d.qty ?? 1}`);
           continue;
         }
         if (d.op === "remove") {
           const ok = envRemoveQty(d.slug, d.where, d.qty ?? 1);
           if (!ok) throw new Error(`env remove failed: ${d.slug}@${d.where}`);
           applied.push(d);
+          pushLog(`Δ env:remove ${d.slug}@${d.where} x${d.qty ?? 1}`);
           continue;
         }
         if (d.op === "move") {
@@ -161,6 +186,7 @@ export function applyDeltas(deltas: Delta[] | undefined | null): { applied: Delt
           if (!ok) throw new Error(`env move: missing ${d.slug}@${d.from}`);
           upsertEnvItem({ slug: d.slug, name: d.slug, where: d.to, qty: d.qty ?? 1 });
           applied.push(d);
+          pushLog(`Δ env:move ${d.slug} ${d.from}→${d.to} x${d.qty ?? 1}`);
           continue;
         }
       }
@@ -169,24 +195,28 @@ export function applyDeltas(deltas: Delta[] | undefined | null): { applied: Delt
         if (d.op === "add") {
           addTo(inv, d.where, d.item, d.qty ?? 1, { name: d.name, tags: d.tags });
           applied.push(d);
+          pushLog(`Δ inv:add ${d.item}@${d.where} x${d.qty ?? 1}`);
           continue;
         }
         if (d.op === "remove") {
           const ok = removeFrom(inv, d.where, d.item, d.qty ?? 1);
           if (!ok) throw new Error(`inv remove failed: ${d.item}@${d.where}`);
           applied.push(d);
+          pushLog(`Δ inv:remove ${d.item}@${d.where} x${d.qty ?? 1}`);
           continue;
         }
         if (d.op === "move") {
           const ok = moveBetween(inv, d.from, d.to, d.item, d.qty ?? 1, undefined);
           if (!ok) throw new Error(`inv move failed: ${d.item} ${d.from}→${d.to}`);
           applied.push(d);
+          pushLog(`Δ inv:move ${d.item} ${d.from}→${d.to} x${d.qty ?? 1}`);
           continue;
         }
         if (d.op === "consume") {
           const ok = consumeAny(inv, d.item, d.qty ?? 1);
           if (!ok) throw new Error(`inv consume failed: ${d.item} x${d.qty ?? 1}`);
           applied.push(d);
+          pushLog(`Δ inv:consume ${d.item} x${d.qty ?? 1}`);
           continue;
         }
       }
@@ -194,6 +224,7 @@ export function applyDeltas(deltas: Delta[] | undefined | null): { applied: Delt
       throw new Error(`unsupported delta: ${JSON.stringify(d)}`);
     } catch (e: any) {
       errors.push(`${e?.message || e}`);
+      pushLog(`Δ ERROR ${e?.message || e}`);
     }
   }
 

@@ -11,6 +11,9 @@ import { inventoryFeed } from "../../feeds/inventory_feed";
 import { contextFeed } from "../../feeds/context_feed";
 import { learnedFeed } from "../../feeds/learned_feed";
 
+// NEW: delta applier
+import { applyDeltas, type Delta } from "../../services/delta_applier";
+
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -148,6 +151,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         activeConditions: char.activeConditions,
       },
     });
+
+    // NEW: apply any immediate deltas from the arbiter
+    if (arbiterDecision && (arbiterDecision as any).apply_now) {
+      applyDeltas(((arbiterDecision as any).apply_now as Delta[]) || []);
+    }
   } catch {
     arbiterDecision = null; // never block the player flow if arbiter fails
   }
