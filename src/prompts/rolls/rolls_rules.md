@@ -106,10 +106,14 @@ If the player’s text includes an **influence verb** (calm, lull, distract, fri
 - If the player asks for a **similar but non-existent item** (e.g., “short sword” but inventory has a **longsword**), prefer to **substitute the closest match** from feeds and proceed with a roll.  
   **Tag:** `["fuzzy-match:<chosen-id>"]` and explain in `reason`.
 
-**Ambient affordances caveat:**  
-If the **environment feeds** include improvised items (e.g. `env:item:rock`, `env:improv:branch`), treat them as usable weapons/tools.  
-- Example: “throw a rock” → Allowed if `env:item:rock` / `env:ground:rock` is present.  
-- If **no tag exists in feeds**, do **not invent** the object (unless the *Ambient Affordances (Immediate)* rule below applies). Otherwise, return **auto-fail** with `["needs-rock"]`.
+**Ambient affordances caveat (priority):**  
+When a player names a **generic, naturally occurring material** and it is **plausible for the current biome**:
+
+1) **If a matching environment tag exists** (e.g. `env:item:rock`, `env:ground:rock`): treat it as usable now.  
+2) **Else**: apply **Ambient Affordances (Immediate)** — add **one** such item via `apply_now` (tag `env:auto-added`) and proceed this turn.  
+3) **Else** (not generic or not biome-plausible): return **auto-fail** with `["needs-<thing>"]`.
+
+This is category-based reasoning (generic, plausible, hand-scale), not a named list.
 
 ---
 
@@ -124,8 +128,7 @@ Players may use **existing** objects as improvised tools/weapons **if the object
 - “throw my **torch**” → If a torch exists in inventory/ground/observed → **Opposed (AGI vs creature)**, tag `["improvised-attack"]`. On success, **consume/move** the torch from hand and **add** a torch to **ground** (it lands).
 - “lasso with my **rope**” → If rope exists in inventory → **Fixed or Opposed (AGI or STR)** depending on fiction (snag / trip / bind), tag `["improvised-action"]`. If no rope in feeds → **Auto-Fail**, `["needs-rope"]`.
 
-**Do not** invent objects that are not in feeds.  
-If the player references a non-existent object, return **auto-fail** with a clear `needs-<thing>` tag.
+**Do not** invent objects that are not in feeds **unless** the case meets **Ambient Affordances (Immediate)** (generic + biome-plausible). Otherwise, auto-fail with a clear `needs-<thing>` tag.
 
 **Examples:**
 - “pick up the **rock** and throw it” → If `env:item:rock` / `env:ground:rock` exists in feeds → **Opposed (AGI vs creature)** or **Fixed (AGI)** with `["improvised-attack"]`.
