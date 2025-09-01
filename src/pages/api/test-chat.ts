@@ -96,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!PASSCODE || !OPENAI_API_KEY) {
     return res.status(500).json({ error: "Server not configured (missing env vars)" });
   }
-  if (!passcode || passcode !== PASSCODE) {
+  if (!passcode || !passcode.trim() || passcode !== PASSCODE) {
     return res.status(401).json({ error: "Invalid passcode" });
   }
 
@@ -151,7 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     arbiterDecision = null; // never block the player flow if arbiter fails
   }
 
-  // Build the system prompt (with a soft guard if the arbiter auto-failed)
+  // Build the system prompt (with a *specific* guard if the arbiter auto-failed)
   let SYSTEM_PROMPT = buildSystemPrompt(
     scenario,
     worldDoc,
@@ -161,19 +161,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   );
 
   if (arbiterDecision && arbiterDecision.kind === "auto-fail") {
-    // Narration guard: don't contradict the arbiter; express failure diegetically.
-    // Keep this hidden to the player; do NOT echo tags or the word "arbiter".
+    // Extract forbidden items from needs-* tags, e.g. ["needs-sea-shell"] -> ["sea shell"]
+    const needs = (arbiterDecision.tags || [])
+      .filter(t => typeof t === "string" && t.startsWith("needs-"))
+      .map(t => t.slice("needs-".length).replace(/[-_]+/g, " ").trim())
+      .filter(Boolean);
+
+    const forbidLines = needs.length
+      ? `- Do **NOT** depict these as present this turn: ${needs.map(n => `"${n}"`).join(", ")}`
+      : "- Do **NOT** depict the missing/blocked item as present this turn.";
+
     const guard = `
-# Narration Guard (do not expose)
+# Narration Guard (hidden; do not expose)
 An earlier rules check determined the player's last request **fails**:
 - Reason: ${arbiterDecision.reason}
 
-As the narrator:
-- Do NOT depict the impossible/missing thing as present or successful.
-- Express the failure **in fiction** (e.g., a brief search finds nothing, the attempt stalls, the path is blocked).
+As the narrator (fiction-first):
+${forbidLines}
+- Express the failure **in-world** (e.g., a brief search finds nothing here; the attempt stalls).
 - Offer **3–5** sensible alternatives that fit the current scene and the player's kit/environment.
 - Never mention rules, tags, dice, or meta. Keep tone consistent with the Conductor Guide.
 `.trim();
+
     SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${guard}`;
   }
 
