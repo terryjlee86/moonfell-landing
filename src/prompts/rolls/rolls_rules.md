@@ -121,6 +121,8 @@ Players may use **existing** objects as improvised tools/weapons **if the object
   - **Observed environment items** (e.g., `env:item:rock`) that have been surfaced by the game state.
 - Improvised melee → usually **Fixed (STR)** or **Opposed (STR vs creature)** depending on context.
 - Improvised thrown → usually **Fixed/Opposed (AGI)**.
+- “throw my **torch**” → If a torch exists in inventory/ground/observed → **Opposed (AGI vs creature)**, tag `["improvised-attack"]`. On success, **consume/move** the torch from hand and **add** a torch to **ground** (it lands).
+- “lasso with my **rope**” → If rope exists in inventory → **Fixed or Opposed (AGI or STR)** depending on fiction (snag / trip / bind), tag `["improvised-action"]`. If no rope in feeds → **Auto-Fail**, `["needs-rope"]`.
 
 **Do not** invent objects that are not in feeds.  
 If the player references a non-existent object, return **auto-fail** with a clear `needs-<thing>` tag.
