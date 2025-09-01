@@ -9,6 +9,7 @@ The AI must use **feeds** (`inventory`, `learned`, `context`, `character`) as th
 - If a required item, spell, or condition is **missing in feeds**, return **auto-fail** with a clear reason and tag (e.g. `needs-bow`, `needs-spell:fireball`).
 - If the action is possible but requires chance, return a **roll** (fixed or opposed).
 - If the action is pure ambience, return **no-roll**.
+- If the action uses an **existing non-weapon item** (book, rock, lantern, rope) as a weapon/tool, treat it as **improvised** (see below).
 
 ---
 
@@ -83,7 +84,7 @@ Any attempt to alter a creature/NPC’s **behaviour, mood, attention, or intent*
 
 Examples: calm, lull, distract, charm, soothe, frighten, intimidate, persuade, lure, mesmerise, confuse, taunt, mislead.
 
-- Default **CHA**; allow **WIL/INT** when fictionally appropriate (prayer/ritual, tactical feint).
+- Default **CHA**; allow **WIL/INT** when fictionally appropriate (prayer, ritual, tactical feint).
 - Use **Opposed vs creature** when a target resists; use **Fixed DC** if resistance is ambient/low.
 
 **Intent heuristic (strict):**  
@@ -102,17 +103,22 @@ If the player’s text includes an **influence verb** (calm, lull, distract, fri
   - Rope → requires `pc:rope`.
   - Torch/Lantern → requires `pc:light:lit` or `pc:light:unlit`.
 - If the specific item is **not in feeds**, auto-fail with clear reason + tag.
-- If the player asks for a **similar but non-existent item** (e.g., “short sword” but inventory has a **longsword**), prefer to **substitute the closest match from feeds** and proceed with a roll.  
+- If the player asks for a **similar but non-existent item** (e.g., “short sword” but inventory has a **longsword**), prefer to **substitute the closest match** from feeds and proceed with a roll.  
   **Tag:** `["fuzzy-match:<chosen-id>"]` and explain in `reason`.
+
+**Ambient affordances caveat:**  
+If the **environment feeds** include improvised items (e.g. `env:item:rock`, `env:improv:branch`), treat them as usable weapons/tools.  
+- Example: “throw a rock” → Allowed if `env:item:rock` / `env:ground:rock` is present.  
+- If **no tag exists in feeds**, do **not invent** the object (unless the *Ambient Affordances (Immediate)* rule below applies). Otherwise, return **auto-fail** with `["needs-rock"]`.
 
 ---
 
 ## Improvised Items (Environment & Ground) — **Allowed if present in feeds**
 Players may use **existing** objects as improvised tools/weapons **if the object exists in feeds**:
 - Sources considered valid:
-  - Inventory/pack items
-  - Items on the **ground** (nearby)
-  - **Observed environment items** (e.g., `env:item:rock`) that have been surfaced by the game state
+  - Inventory/pack items.
+  - Items on the **ground** (nearby).
+  - **Observed environment items** (e.g., `env:item:rock`) that have been surfaced by the game state.
 - Improvised melee → usually **Fixed (STR)** or **Opposed (STR vs creature)** depending on context.
 - Improvised thrown → usually **Fixed/Opposed (AGI)**.
 
@@ -120,7 +126,7 @@ Players may use **existing** objects as improvised tools/weapons **if the object
 If the player references a non-existent object, return **auto-fail** with a clear `needs-<thing>` tag.
 
 **Examples:**
-- “pick up the **rock** and throw it” → If `env:item:rock` or a ground rock exists in feeds → **Opposed (AGI vs creature)** or **Fixed (AGI)** with `["improvised-attack"]`.
+- “pick up the **rock** and throw it” → If `env:item:rock` / `env:ground:rock` exists in feeds → **Opposed (AGI vs creature)** or **Fixed (AGI)** with `["improvised-attack"]`.
 - “smash with a **book**” → If a book exists in pack/ground/observed → **Opposed (STR vs creature)** with `["improvised-attack"]`. If not → **Auto-Fail**, `["needs-book"]`.
 
 ---
@@ -138,16 +144,61 @@ If the player references a non-existent object, return **auto-fail** with a clea
 
 ---
 
+## Ambient Affordances (Immediate)
+If the player requests a **generic, low-value material** that is **obviously plausible** in the current setting (e.g., **rock/pebble/branch/stick** in a gorge/forest/road), you may add **exactly one** to the scene **immediately** so the action can proceed this turn.
+
+- Only for **generic, ambient** materials (not gear: bows, firearms, grenades, traps, etc.).  
+- Add it as a ground item and tag `env:auto-added`.  
+- Prefer **AGI** for thrown, **STR** for blunt melee.  
+- If the material is **implausible** for the biome, return **auto-fail** with `["needs-<thing>"]`.
+
+**Example:** “pick up a rock and throw it” in a gorge → **Opposed (AGI vs creature)**; add one rock to ground (see delta fields below).
+
+---
+
+## Decision JSON (with optional deltas)
+Alongside the decision, include optional **state deltas** so the engine can apply them without an extra pass.
+
+```json
+{
+  "kind": "no-roll | auto-success | auto-fail | fixed | opposed",
+  "reason": "short, plain language why",
+  "tags": ["optional","tags","for","debug"],
+
+  "apply_now": [
+    { "type":"environment","op":"add","slug":"rock","name":"Rock","where":"ground","qty":1,"tags":["improv","throwable","env:auto-added"] },
+    { "type":"inventory","op":"move","item":"rock","from":"ground","to":"hand","qty":1 }
+  ],
+
+  "on_success": [
+    { "type":"inventory","op":"consume","item":"rock","qty":1 },
+    { "type":"environment","op":"add","slug":"rock","where":"ground","qty":1 }
+  ],
+
+  "on_failure": [
+    { "type":"inventory","op":"move","item":"rock","from":"hand","to":"ground","qty":1 }
+  ]
+}
+```
+
+**Rules for deltas:**
+- Use **`apply_now`** only for small, reversible changes (ready/move/add **one** generic ambient item).
+- Use **`on_success` / `on_failure`** for outcome-based changes (consume, drop, land).
+- Never add **non-generic gear** via `apply_now`. If a named gear item is missing (e.g., bow), return **auto-fail** with `["needs-bow"]`.
+
+---
+
 ## Examples (authoritative)
 - “sing a tune” → **No Roll**, `["ambient-action"]`.
 - “sing a tune **to lull the creature**” → **Opposed**, `atk=CHA vs creature`, `["social-influence"]`.
 - “whisper a prayer to steady my nerves” → **Fixed (WIL)**, `["self-bolster"]`.
-- “shove the goblin” → **Opposed (STR vs creature)**.
-- “sneak past the lookout” → **Opposed (AGI vs perception)**.
+- “shove the goblin” → **Opposed (STR vs creature)`.
+- “sneak past the lookout” → **Opposed (AGI vs perception)`.
 - “shoot my bow” when **no bow in feeds** → **Auto-Fail**, reason “You don’t have a bow.”, `["needs-bow"]`.
 - “use my **short sword**” when only a **longsword** exists → **Fixed**, reason “Interpreted as longsword (closest match).”, `["fuzzy-match:longsword"]`.
 - “pick up the **rock** and throw it” when `env:item:rock` is present → **Opposed (AGI vs creature)**, `["improvised-attack"]`.
-- “pick up the **rock** and throw it” when no rock is present in feeds → **Auto-Fail**, `["needs-rock"]`.
+- “pick up a **rock** and throw it” when none have been promoted yet but rocks are plausible for the biome → **Opposed (AGI vs creature)** with `apply_now` adding 1 `rock@ground` (`env:auto-added`).
+- “pick up the **rock** and throw it” when rocks are implausible here → **Auto-Fail**, `["needs-rock"]`.
 
 ---
 
@@ -161,4 +212,4 @@ Narrate outcomes; never expose raw math.
 If the client requests debug, include:
 - Category (no-roll / auto-success / auto-fail / fixed / opposed)
 - **Reason**
-- Any `needs-*`, `fuzzy-match:*`, `improvised-*`, or `rail-block` tags
+- Any `needs-*`, `fuzzy-match:*`, `improvised-*`, `env:auto-added`, or `rail-block` tags
