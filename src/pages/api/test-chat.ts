@@ -66,9 +66,9 @@ function buildSystemPrompt(
   // This is DATA + DIRECTION, not lines to say.
   const groundTruthBlock = `
 # Ground Truth Contract (hidden; do not expose)
-- Feeds are the only current world state. Never infer items from the scenario text.
-- Inventory answers and option suggestions must be based only on the inventory feed.
-- If an item is not present in the feed, treat it as absent and prefer plausible present alternatives.
+- Feeds are the only current world state. Never infer items or capabilities from the scenario text.
+- Inventory answers and option suggestions must be based only on the inventory/context/learned feeds for THIS turn.
+- If an item/skill/spell is not present in the feeds, treat it as absent and prefer plausible present alternatives.
 - Current Kit (from feeds): ${groundTruth.kitNames.length ? groundTruth.kitNames.join(", ") : "(none)"}
 `.trim();
 
@@ -262,13 +262,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .map((t) => t.split(":")[2])
       .filter(Boolean);
 
+    // Learned (names) from learned feed (optional)
+    const learnedItems = (lrn as any)?.list?.items ?? [];
+    const learnedNames: string[] = learnedItems
+      .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
+      .filter((s: string) => !!s);
+
     const optionsGuard = `
 # OPTIONS GUARD (hidden; do not expose)
-When offering the 3–5 numbered options, if intending to use an item, weapon, spell, skill, trait, consult feeds and only use items/capabilities that exist now.
-- Player kit names (from inventory feed): ${currentKitNames.length ? currentKitNames.join(", ") : "none"}
-- Scene affordances (from context feed): ${sceneItems.length ? sceneItems.join(", ") : "none"}
-- Never rely on scenario.startKit as current state; feeds override any prior assumptions.
-- Prefer distinct shapes (attack / defend / move / throw / speak / use-scene). Keep within scenario boundaries.
+When proposing the 3–5 numbered options, if an option would use an item, weapon, spell, skill, trait, or environmental object,
+consult FEEDS and only use capabilities that exist right now.
+
+- Player kit (inventory feed): ${currentKitNames.length ? currentKitNames.join(", ") : "none"}
+- Scene affordances (context feed): ${sceneItems.length ? sceneItems.join(", ") : "none"}
+- Learned capabilities (learned feed): ${learnedNames.length ? learnedNames.join(", ") : "none"}
+
+Rules:
+- **Feeds override everything** (scenario text, prior assumptions, earlier messages). If a capability or item is not present in feeds this turn, treat it as absent.
+- Do not infer missing gear/spells/skills from the scenario or prior turns.
+- Prefer distinct shapes (attack / defend / move / throw / speak / use-scene), within scenario boundaries.
 `.trim();
 
     SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${optionsGuard}`;
@@ -287,7 +299,7 @@ When offering the 3–5 numbered options, if intending to use an item, weapon, s
     if (needs.length) {
       const guard = `
 # Scene Truths (strict for this turn; do not expose)
-- The following items are **NOT present** this turn: ${needs.map(n => `"${n}"`).join(", ")}.
+- The following items/capabilities are **NOT present** this turn: ${needs.map(n => `"${n}"`).join(", ")}.
 - If the user asserts seeing any of them, treat it as misperception and reflect their absence in-world; prefer present alternatives where sensible.
 `.trim();
       extraSystemGuards.push({ role: "system", content: guard });
