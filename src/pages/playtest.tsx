@@ -10,7 +10,8 @@ export default function Playtest() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
-  const [debug, setDebug] = useState(false); // <-- NEW: Debug toggle
+  const [debug, setDebug] = useState(false);       // existing: Arbiter/Feeds/Observer debug
+  const [debugRoll, setDebugRoll] = useState(false); // NEW: Rolls debug
   const viewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,7 +60,8 @@ export default function Playtest() {
           message: userTurn.content,
           history,               // keep as-is
           scenarioId: "forest_ambush",
-          debug,                 // <-- NEW: send toggle to backend
+          debug,                 // existing: general debug (arb/feeds/observer)
+          debugRoll,             // NEW: rolls debug
         }),
       });
       const j = await r.json();
@@ -70,12 +72,12 @@ export default function Playtest() {
       }
       const reply: string = j.reply || "(no reply)";
 
-      // NEW: insert any debug messages BEFORE the narrator reply
+      // Optional: separate debug messages if backend ever returns them
       const debugMessages: Turn[] = Array.isArray(j.debugMessages) ? j.debugMessages : [];
       setHistory((h) => [
         ...h,
-        ...debugMessages,                 // separate assistant messages
-        { role: "assistant", content: reply }, // narrator reply unchanged
+        ...debugMessages,
+        { role: "assistant", content: reply },
       ]);
     } catch (e: any) {
       setErr("Network error.");
@@ -137,7 +139,7 @@ export default function Playtest() {
               )}
             </div>
 
-            {/* NEW: Debug toggle aligned with input row */}
+            {/* Debug toggles + input row */}
             <div style={{ ...styles.inputRow, alignItems: "center" }}>
               <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <input
@@ -146,6 +148,16 @@ export default function Playtest() {
                   onChange={(e) => setDebug(e.target.checked)}
                 />
                 Debug
+              </label>
+
+              {/* NEW: Rolls debug */}
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={debugRoll}
+                  onChange={(e) => setDebugRoll(e.target.checked)}
+                />
+                Rolls
               </label>
 
               <form onSubmit={send} style={{ display: "flex", gap: 8, flex: 1 }}>
