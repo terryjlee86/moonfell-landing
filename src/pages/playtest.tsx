@@ -14,13 +14,53 @@ export default function Playtest() {
   // Debug toggles
   const [debug, setDebug] = useState(false);           // Arbiter + Observer debug
   const [debugRoll, setDebugRoll] = useState(false);   // Rolls math banner
-  const [debugFeeds, setDebugFeeds] = useState(false); // NEW: feed tag wall on/off
+  const [debugFeeds, setDebugFeeds] = useState(false); // NEW: feeds tag wall on/off
 
   const viewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     viewRef.current?.scrollTo({ top: viewRef.current.scrollHeight, behavior: "smooth" });
   }, [history, intro]);
+
+  // --- utility: pull numbered options from the most recent assistant message
+  function extractNumberedOptionsFrom(text: string): Record<string, string> {
+    // Matches lines that start with "1. Something", "2) Something", "3 - Something", etc.
+    // We capture the number and the rest of the line as the option text.
+    const lines = text.split(/\r?\n/);
+    const map: Record<string, string> = {};
+    for (const line of lines) {
+      const m = line.match(/^\s*([1-5])[\.\)\-:]\s+(.*\S)\s*$/);
+      if (m) {
+        const num = m[1];
+        const optionText = m[2];
+        map[num] = optionText;
+      }
+    }
+    return map;
+  }
+
+  // Get the latest assistant text (the one that listed the options)
+  function getLastAssistantMessage(): string | null {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === "assistant") return history[i].content || "";
+    }
+    return null;
+  }
+
+  function expandNumericSelectionIfAny(raw: string): string {
+    const trimmed = raw.trim();
+    // Only handle a bare 1–5 (optionally followed by punctuation/space)
+    const m = trimmed.match(/^\s*([1-5])\s*([.!?)\]]+)?\s*$/);
+    if (!m) return raw;
+
+    const lastAssistant = getLastAssistantMessage();
+    if (!lastAssistant) return raw;
+
+    const options = extractNumberedOptionsFrom(lastAssistant);
+    const selected = options[m[1]];
+    // If we can resolve it, return that option phrase; otherwise keep the raw input
+    return selected ? selected : raw;
+  }
 
   async function unlock(e: FormEvent) {
     e.preventDefault();
@@ -51,10 +91,16 @@ export default function Playtest() {
     e.preventDefault();
     if (!input.trim() || loading) return;
     setErr("");
-    const userTurn: Turn = { role: "user", content: input.trim() };
+
+    // Expand numeric selection to the option text so it behaves as if the player typed it.
+    const expanded = expandNumericSelectionIfAny(input);
+
+    // Push the (possibly expanded) text to history as the user’s message
+    const userTurn: Turn = { role: "user", content: expanded.trim() };
     setHistory((h) => [...h, userTurn]);
     setInput("");
     setLoading(true);
+
     try {
       const r = await fetch("/api/test-chat", {
         method: "POST",
@@ -62,7 +108,7 @@ export default function Playtest() {
         body: JSON.stringify({
           passcode,
           message: userTurn.content,
-          history,               // keep as-is
+          history,               // keep as-is (server already trims to last N)
           scenarioId: "forest_ambush",
           debug,                 // Arbiter/Observer
           debugRoll,             // Rolls
@@ -166,7 +212,7 @@ export default function Playtest() {
                 Rolls
               </label>
 
-              {/* NEW: Feeds toggle */}
+              {/* Feeds toggle */}
               <label style={styles.checkbox}>
                 <input
                   type="checkbox"
