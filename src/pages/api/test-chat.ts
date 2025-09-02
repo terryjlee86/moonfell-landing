@@ -48,6 +48,11 @@ function trimTo(maxChars: number, text: string) {
     : text;
 }
 
+function isNumericSelection(s: string) {
+  const t = (s || "").trim();
+  return /^(?:[1-5])(?:$|\s|[.,!?)\]])/.test(t);
+}
+
 // ---------- prompt builder ----------
 function buildSystemPrompt(
   scenario: typeof forestAmbush,
@@ -62,21 +67,12 @@ function buildSystemPrompt(
   const conductor = trimTo(6000, conductorDoc);
   const system = trimTo(9000, systemDoc);
 
-  // Hidden: ground-truth contract and current kit (from FEEDS only).
-  // This is DATA + DIRECTION, not lines to say.
   const groundTruthBlock = `
 # Ground Truth Contract (hidden; do not expose)
 - Feeds are the only current world state. Never infer items or capabilities from the scenario text.
 - Inventory answers and option suggestions must be based only on the inventory/context/learned feeds for THIS turn.
 - If an item/skill/spell is not present in the feeds, treat it as absent and prefer plausible present alternatives.
 - Current Kit (from feeds): ${groundTruth.kitNames.length ? groundTruth.kitNames.join(", ") : "(none)"}
-`.trim();
-
-  // Tiny rule so the arbiter resolves numeric replies against its own options
-  const choiceResolutionBlock = `
-# Choice Resolution (hidden; do not expose)
-If the player replies with a number (e.g., "1"), resolve it against the numbered options you just offered this turn.
-Use feeds and any provided choiceHints to disambiguate item/verb. Feeds override scenario or prior assumptions.
 `.trim();
 
   return `
@@ -103,8 +99,6 @@ ${enc || "[No encounter doc]"}
 
 ${groundTruthBlock}
 
-${choiceResolutionBlock}
-
 # Output Contract
 - Follow **PLAYER INTERFACE**, **NARRATION ETIQUETTE**, and **START THE SCENE** in the Conductor Guide.
 - Always include **3–5 numbered, straightforward options**.
@@ -114,7 +108,7 @@ ${choiceResolutionBlock}
 `.trim();
 }
 
-// ---------- helper: soft choice hints for the arbiter (feeds-driven, not scripting) ----------
+// ---------- helper: feeds-driven option mapping ----------
 function findTagSlug(tags: string[], prefix: string): string | null {
   const t = tags.find((x) => x.startsWith(prefix));
   return t ? t.slice(prefix.length) : null;
@@ -124,6 +118,58 @@ function nameForSlug(tags: string[], slug: string | null): string | null {
   const p = `pc:name:${slug}=`;
   const t = tags.find((x) => x.startsWith(p));
   return t ? t.slice(p.length) : null;
+}
+
+type OptionMap = Record<"1" | "2" | "3" | "4" | "5", string | null>;
+
+/**
+ * Build a feeds-grounded map from 1..5 to intended option phrases.
+ * These phrases are only used to expand numeric user input before we call the arbiter.
+ */
+function buildOptionMap(inv: ReturnType<typeof inventoryFeed>, ctx: ReturnType<typeof contextFeed>): OptionMap {
+  const map: OptionMap = { "1": null, "2": null, "3": null, "4": null, "5": null };
+
+  // 1) Attack with main-hand melee if present
+  if (inv.tags.includes("pc:weapon:melee")) {
+    const mhSlug = findTagSlug(inv.tags, "pc:hand:main:");
+    const mhName = nameForSlug(inv.tags, mhSlug) ||
+      (inv.list.items.find((it: any) => it.kind === "melee")?.name ?? "your blade");
+    map["1"] = `attack with ${mhName}`;
+  }
+
+  // 2) Defend with shield if present
+  if (inv.tags.includes("pc:shield")) {
+    const shieldSlug = ((): string | null => {
+      const nameTag = inv.tags.find((t) => t.startsWith("pc:name:") && /buckler/i.test(t)) || null;
+      return nameTag ? nameTag.slice("pc:name:".length).split("=")[0] : null;
+    })();
+    const shieldName = nameForSlug(inv.tags, shieldSlug) ||
+      (inv.list.items.find((it: any) => it.kind === "shield")?.name ?? "your shield");
+    map["2"] = `defend with ${shieldName}`;
+  }
+
+  // 3) Throwing axe if available
+  const throwingAxeCount = (() => {
+    const t = inv.tags.find((t) => t.startsWith("pc:throwing-axe:"));
+    if (!t) return 0;
+    const n = Number(t.split(":")[2]);
+    return isNaN(n) ? 0 : n;
+  })();
+  if (throwingAxeCount > 0) {
+    const taName = inv.list.items.find((it: any) => it.kind === "throwing-axe")?.name ?? "your throwing axe";
+    map["3"] = `throw ${taName}`;
+  }
+
+  // 4) Social attempt is generally available
+  map["4"] = "attempt a social action (negotiate or intimidate)";
+
+  // 5) Use environment if affordances exist
+  const hasEnvAff = ctx.tags.some((t) => t.startsWith("env:item:"));
+  if (hasEnvAff) {
+    map["5"] = "use the environment (stones, branches, positioning)";
+  }
+
+  return map;
 }
 
 // ---------- handler ----------
@@ -138,7 +184,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     scenarioId,
     debug,
     debugRoll,
-    debugFeeds, // <— NEW
+    debugFeeds, // toggle feed tag wall
   } = (req.body || {}) as {
     passcode?: string;
     init?: boolean;
@@ -147,7 +193,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     scenarioId?: string;
     debug?: boolean;       // arbiter/observer debug block
     debugRoll?: boolean;   // roll math banner
-    debugFeeds?: boolean;  // <— NEW: print feed tag wall when true
+    debugFeeds?: boolean;  // feeds tag wall
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
@@ -212,69 +258,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
-  const userMessage = (message || "").trim();
-  if (!userMessage) return res.status(400).json({ error: "No message provided" });
+  const userMessageRaw = (message || "").trim();
+  if (!userMessageRaw) return res.status(400).json({ error: "No message provided" });
 
   // ---------- Gather feeds (compact, prompt-safe) ----------
-  let arbiterDecision: ArbiterDecision | null = null;
-
   const char = characterFeed();    // { name, stance, stats, activeConditions }
   const inv  = inventoryFeed();    // { tags: string[], list: {...} }
   const ctx  = contextFeed();      // { tags: string[] }
   const lrn  = learnedFeed();      // { tags: string[], list: {...} }
 
-  // ---------- Soft choice hints (feeds → likely mapping) ----------
-  const softOptionHints: string[] = (() => {
-    const hints: string[] = [];
+  // Build feeds-grounded option map and expand numeric selection BEFORE arbiter
+  const optionMap = buildOptionMap(inv, ctx);
+  const selectionKey = userMessageRaw.trim().charAt(0) as "1"|"2"|"3"|"4"|"5";
+  const expandedMessage =
+    isNumericSelection(userMessageRaw) && optionMap[selectionKey]
+      ? optionMap[selectionKey]!
+      : userMessageRaw;
 
-    // 1) Attack with main-hand melee if present
-    if (inv.tags.includes("pc:weapon:melee")) {
-      const mhSlug = findTagSlug(inv.tags, "pc:hand:main:");
-      const mhName = nameForSlug(inv.tags, mhSlug) ||
-        (inv.list.items.find((it: any) => it.kind === "melee")?.name ?? "melee weapon");
-      hints.push(`1: attack with ${mhName} (melee)`);
-    }
-
-    // 2) Defend with shield if present
-    if (inv.tags.includes("pc:shield")) {
-      const shieldSlug = ((): string | null => {
-        const nameTag = inv.tags.find((t) => t.startsWith("pc:name:") && t.includes("Buckler")) || null;
-        return nameTag ? nameTag.slice("pc:name:".length).split("=")[0] : null;
-      })();
-      const shieldName = nameForSlug(inv.tags, shieldSlug) ||
-        (inv.list.items.find((it: any) => it.kind === "shield")?.name ?? "shield");
-      hints.push(`2: defend with ${shieldName} (defend)`);
-    }
-
-    // 3) Throwing axe if available
-    const throwingAxeCount = (() => {
-      const t = inv.tags.find((t) => t.startsWith("pc:throwing-axe:"));
-      if (!t) return 0;
-      const n = Number(t.split(":")[2]);
-      return isNaN(n) ? 0 : n;
-    })();
-    if (throwingAxeCount > 0) {
-      const taName = inv.list.items.find((it: any) => it.kind === "throwing-axe")?.name ?? "Throwing Axe";
-      hints.push(`3: throw ${taName} (ranged/throw)`);
-    }
-
-    // 4) Social attempt is generally available
-    hints.push("4: social attempt (negotiate/intimidate)");
-
-    // 5) Use environment if affordances exist
-    const hasEnvAff = ctx.tags.some((t) => t.startsWith("env:item:"));
-    if (hasEnvAff) {
-      hints.push("5: use environment (stones/branches/positioning)");
-    }
-
-    return hints;
-  })();
-
-  // ---------- Ask the Rolls DM with feeds (+ soft hints; compile-safe) ----------
+  // ---------- Arbiter call ----------
+  let arbiterDecision: ArbiterDecision | null = null;
   try {
-    // Build payload with known shape; attach hints only if present to avoid TS complaining
     const arbiterPayload: any = {
-      message: userMessage,
+      message: expandedMessage,       // <— use expanded intent if a number was chosen
       sceneTags: ctx.tags,
       inventoryTags: inv.tags,
       learnedTags: lrn.tags,
@@ -285,11 +290,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         activeConditions: char.activeConditions,
       },
     };
-    if (softOptionHints.length) arbiterPayload.choiceHints = softOptionHints; // compile-safe
 
     arbiterDecision = await getRollDecision(arbiterPayload);
 
-    // Apply immediate state changes proposed by the Rolls DM (if any)
     if (arbiterDecision && (arbiterDecision as any).apply_now) {
       applyDeltas(((arbiterDecision as any).apply_now as Delta[]) || []);
     }
@@ -336,15 +339,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     { kitNames: currentKitNames }
   );
 
-  // --- Options Guard: restrict suggested options to items/capabilities that actually exist now ---
+  // --- Options Guard (feeds precedence) ---
   try {
-    // Scene affordances (from env tags)
     const sceneItems: string[] = (ctx.tags || [])
       .filter((t) => t.startsWith("env:item:"))
       .map((t) => t.split(":")[2])
       .filter(Boolean);
 
-    // Learned (names) from learned feed (optional)
     const learnedItems = (lrn as any)?.list?.items ?? [];
     const learnedNames: string[] = learnedItems
       .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
@@ -392,7 +393,7 @@ Rules:
     { role: "system", content: SYSTEM_PROMPT },
     ...extraSystemGuards,
     ...(Array.isArray(history) ? history.slice(-8) : []),
-    { role: "user", content: userMessage },
+    { role: "user", content: userMessageRaw }, // keep original as the visible user turn
   ];
 
   try {
@@ -445,7 +446,7 @@ Rules:
 
     // ---------- Debug output ----------
     if (debug === true) {
-      const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
+      const preview = userMessageRaw.replace(/\s+/g, " ").slice(0, 140);
 
       const decisionStr = (() => {
         if (!arbiterDecision) return "unavailable";
@@ -481,11 +482,11 @@ Rules:
         }
       })();
 
-      // Feed wall only when debugFeeds is true
       let feedLine = "";
       if (debugFeeds === true) {
         const feedTags = [...ctx.tags, ...inv.tags, ...lrn.tags].slice(0, 120).join(", ");
-        feedLine = `\n[feeds: ${feedTags} | stance=${char.stance} cond=${(char.activeConditions?.length ? char.activeConditions.join(",") : "none")}]`;
+        const cond = (char.activeConditions?.length ? char.activeConditions.join(",") : "none");
+        feedLine = `\n[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
       }
 
       const arbLine = `[arb: input="${preview}" | ${decisionStr}]`;
