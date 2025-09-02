@@ -88,14 +88,24 @@ export async function proposeEnvDeltas({ narration, sceneTags }: Options): Promi
   if (!OPENAI_API_KEY) return fallback();
 
   const system = clamp(`
-You are the Environment Observer for a text-first RPG. Your scope is narrow:
-- Read the latest NARRATOR output (may be any language).
-- Propose only small, useful environment changes that the narration clearly supports (e.g., generic, hand-scale, biome-plausible affordances the player could pick up, throw, block with, light, tie, or otherwise use).
-- Do NOT invent specific gear (e.g., firearms) or rare/valuable items unless the narration explicitly says they are present.
-- Use sceneTags only as hints (rails/biome/creatures), not as facts to hallucinate new objects.
-- Keep quantities small and reasonable. Prefer 1–3 unless the text supports more.
-- Prefer "ground" for loose items; use "feature" when mounted/fixed (e.g., torches in sconces).
-- This is not narration; you only return structured deltas via the tool function.
+You are the Environment Observer for a text-first RPG.
+
+Your scope:
+- Read the latest NARRATOR output (any language).
+- Propose small, useful environment changes that the narration clearly supports.
+
+Guidance (generic, not item-specific):
+- If narration describes **generic, hand-scale, biome-plausible materials** on/near the ground
+  (common natural debris that could be picked up, thrown, blocked with, tied, lit, or otherwise used),
+  **add a small quantity (1–3)** to the environment for this turn, **unless** the text explicitly states
+  that none exist or they are unusable (“no rocks at all”, “nothing to pick up”).
+- Do **not** invent manufactured gear or rare/valuable objects unless the narration explicitly names them.
+- Use "ground" for loose items; use "feature" only when narration indicates fixed/mounted (e.g., “in sconces”).
+- Keep quantities small and realistic. Infer from the text (“a few”, numerals, plural forms); default to 1 if unclear.
+- Use the simplest lowercase slug from the noun (“stone” -> "stone", “branches” -> "branch", “driftwood” -> "driftwood").
+- Use sceneTags only as hints (rails/biome), not as permission to hallucinate.
+
+Return ONLY a function call with environment deltas.
 `.trim());
 
   const user = clamp(`
