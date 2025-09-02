@@ -213,14 +213,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
     // NEW — promote generic, plausible items mentioned by the narrator into environment state
+    // and build a minimal debug line showing what was added.
+    let __observerLine = "";
     try {
       const envDeltas = await proposeEnvDeltas({ narration: reply, sceneTags: ctx.tags });
-      if (envDeltas.length) {
+      if (Array.isArray(envDeltas) && envDeltas.length) {
         applyDeltas(envDeltas as unknown as Delta[]);
+        const added = envDeltas
+          .filter(d => d.type === "environment" && d.op === "add")
+          .map(d => `${(d as any).slug}@${(d as any).where} x${(d as any).qty ?? 1}`);
+        if (added.length) __observerLine = `[obs: added ${added.join(", ")}]`;
       }
-    } catch {
-      // never block the player flow if observer fails
-    }
+    } catch { /* never block play */ }
 
     // ---------- Debug output (optional; does not change the narrator’s prose) ----------
     if (debug === true) {
@@ -275,8 +279,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         `[arb: input="${preview}" | ${decisionStr}]\n` +
         `[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
 
+      const observerBlock = __observerLine ? `${__observerLine}\n` : "";
+
       // prepend debug to the narrator reply so it shows *just before* prose
-      reply = `${dbgBlock}\n\n${reply}`;
+      reply = `${dbgBlock}\n${observerBlock}\n${reply}`;
     }
 
     return res.status(200).json({ reply, scenario: scenario.id });
