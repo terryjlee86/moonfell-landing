@@ -14,6 +14,9 @@ import { learnedFeed } from "../../feeds/learned_feed";
 // Delta applier (applies Rolls DM apply_now / outcome deltas)
 import { applyDeltas, type Delta } from "../../services/delta_applier";
 
+// NEW: narrator observer (promote generic plausible items from narration)
+import { proposeEnvDeltas } from "../../services/narration_observer";
+
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -208,6 +211,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const data = JSON.parse(text);
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
+
+    // NEW — promote generic, plausible items mentioned by the narrator into environment state
+    try {
+      const envDeltas = await proposeEnvDeltas({ narration: reply, sceneTags: ctx.tags });
+      if (envDeltas.length) {
+        applyDeltas(envDeltas as unknown as Delta[]);
+      }
+    } catch {
+      // never block the player flow if observer fails
+    }
 
     // ---------- Debug output (optional; does not change the narrator’s prose) ----------
     if (debug === true) {
