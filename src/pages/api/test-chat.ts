@@ -23,6 +23,9 @@ import { getEnvironment } from "../../state/environment";
 // NEW: roll manager (wire-in only for fixed/opposed; narration unchanged)
 import { resolveActionHit } from "../../services/roll_manager";
 
+// NEW: set inventory at init based on scenario.startKit
+import { setInventory } from "../../state/inventory";
+
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -119,8 +122,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Choose scenario (extend later if multiple)
   const scenario = forestAmbush;
 
-  // Init: send scenario intro without spending tokens
+  // Init: set inventory from scenario.startKit and send scenario intro
   if (init) {
+    try {
+      const kit = Array.isArray((scenario as any).startKit) ? (scenario as any).startKit : [];
+
+      const equipped = kit.filter((i: any) => i.where === "main" || i.where === "off" || i.where === "belt");
+      const pack     = kit.filter((i: any) => i.where === "pack");
+      const ground   = kit.filter((i: any) => i.where === "ground");
+
+      setInventory({
+        equipped: equipped.map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          where: i.where,
+          qty: i.qty ?? 1,
+          tags: i.tags,
+          lit: i.lit,
+        })),
+        pack: pack.map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          where: i.where,
+          qty: i.qty ?? 1,
+          tags: i.tags,
+          lit: i.lit,
+        })),
+        ground: ground.map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          where: i.where,
+          qty: i.qty ?? 1,
+          tags: i.tags,
+          lit: i.lit,
+        })),
+      });
+    } catch {
+      // never block init on failure
+    }
+
     return res.status(200).json({
       intro: scenario.introForPlayer,
       scenario: scenario.id,
