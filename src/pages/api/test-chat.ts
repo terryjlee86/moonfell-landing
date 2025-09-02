@@ -14,8 +14,11 @@ import { learnedFeed } from "../../feeds/learned_feed";
 // Delta applier (applies Rolls DM apply_now / outcome deltas)
 import { applyDeltas, type Delta } from "../../services/delta_applier";
 
-// NEW: narrator observer (promote generic plausible items from narration)
+// Observer (promote plausible items from narration)
 import { proposeEnvDeltas } from "../../services/narration_observer";
+
+// NEW: read current environment to avoid re-adding items that already exist
+import { getEnvironment } from "../../state/environment";
 
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
@@ -212,17 +215,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const data = JSON.parse(text);
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
-    // NEW — promote generic, plausible items mentioned by the narrator into environment state
-    // and build a minimal debug line showing what was added.
+    // NEW — promote generic, plausible items mentioned by the narrator into environment state,
+    // but DO NOT re-add if the same slug@where already exists.
     let __observerLine = "";
     try {
       const envDeltas = await proposeEnvDeltas({ narration: reply, sceneTags: ctx.tags });
+
       if (Array.isArray(envDeltas) && envDeltas.length) {
-        applyDeltas(envDeltas as unknown as Delta[]);
-        const added = envDeltas
-          .filter(d => d.type === "environment" && d.op === "add")
-          .map(d => `${(d as any).slug}@${(d as any).where} x${(d as any).qty ?? 1}`);
-        if (added.length) __observerLine = `[obs: added ${added.join(", ")}]`;
+        const env = getEnvironment();
+        const existing = new Set(env.items.map(it => `${it.slug}@${it.where}`));
+
+        const filtered = envDeltas.filter(d => {
+          if (d.type !== "environment" || d.op !== "add") return true; // pass through non-adds
+          const key = `${(d as any).slug}@${(d as any).where}`;
+          // Skip adding if already present
+          return !existing.has(key);
+        });
+
+        if (filtered.length) {
+          applyDeltas(filtered as unknown as Delta[]);
+          const added = filtered
+            .filter(d => d.type === "environment" && d.op === "add")
+            .map(d => `${(d as any).slug}@${(d as any).where} x${(d as any).qty ?? 1}`);
+          if (added.length) __observerLine = `[obs: added ${added.join(", ")}]`;
+        }
       }
     } catch { /* never block play */ }
 
