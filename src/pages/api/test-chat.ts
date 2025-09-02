@@ -20,6 +20,9 @@ import { proposeEnvDeltas } from "../../services/narration_observer";
 // NEW: read current environment to avoid re-adding items that already exist
 import { getEnvironment } from "../../state/environment";
 
+// NEW: roll manager (wire-in only for fixed/opposed; narration unchanged)
+import { resolveActionHit } from "../../services/roll_manager";
+
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -90,13 +93,14 @@ ${enc || "[No encounter doc]"}
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { passcode, init, message, history = [], scenarioId, debug } = (req.body || {}) as {
+  const { passcode, init, message, history = [], scenarioId, debug, debugRoll } = (req.body || {}) as {
     passcode?: string;
     init?: boolean;
     message?: string;
     history?: Turn[];
     scenarioId?: string;
-    debug?: boolean; // <-- front-end checkbox toggles this
+    debug?: boolean;      // existing UI toggle (arb/feeds/obs)
+    debugRoll?: boolean;  // NEW: separate toggle for roll math debug
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
@@ -157,6 +161,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     arbiterDecision = null; // never block the player flow if arbiter fails
   }
 
+  // NEW — Run Roll Manager (mechanical roll only; narration unchanged)
+  let __rollLine = "";
+  if (arbiterDecision && (arbiterDecision.kind === "fixed" || arbiterDecision.kind === "opposed")) {
+    const out = resolveActionHit({
+      decision: arbiterDecision,
+      sceneTags: ctx.tags,
+      inventoryTags: inv.tags,
+      learnedTags: lrn.tags,
+      seedParts: {
+        scenarioId: scenario.id,
+        turn: (Array.isArray(history) ? history.length : 0) + 1,
+        userHash: "anon", // you can pass a real hash later if desired
+        extra: "hit",
+      },
+      debugRoll: !!debugRoll,
+      // simple baselines; can be adjusted later or read from creature tags
+      defenderDefenseBonus: 2,
+      attackerAbilityBonus: 0,
+    });
+
+    if (debugRoll && out.handled && out.debugLine) {
+      __rollLine = out.debugLine;
+    }
+  }
+
   // Build the system prompt
   let SYSTEM_PROMPT = buildSystemPrompt(
     scenario,
@@ -215,8 +244,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const data = JSON.parse(text);
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
-    // NEW — promote generic, plausible items mentioned by the narrator into environment state,
-    // but DO NOT re-add if the same slug@where already exists.
+    // Promote narrator-mentioned items → env state (skip if already present)
     let __observerLine = "";
     try {
       const envDeltas = await proposeEnvDeltas({ narration: reply, sceneTags: ctx.tags });
@@ -228,7 +256,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const filtered = envDeltas.filter(d => {
           if (d.type !== "environment" || d.op !== "add") return true; // pass through non-adds
           const key = `${(d as any).slug}@${(d as any).where}`;
-          // Skip adding if already present
           return !existing.has(key);
         });
 
@@ -243,7 +270,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } catch { /* never block play */ }
 
     // ---------- Debug output (optional; does not change the narrator’s prose) ----------
-    if (debug === true) {
+    if (debug === true || debugRoll === true) {
       const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
 
       const decisionStr = (() => {
@@ -280,25 +307,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       })();
 
-      // compact snapshot of feeds that informed the decision
-      const feedTags = [
-        ...ctx.tags,
-        ...inv.tags,
-        ...lrn.tags,
-      ]
-        .slice(0, 24) // prevent huge lines
-        .join(", ");
-
+      const feedTags = [...ctx.tags, ...inv.tags, ...lrn.tags].slice(0, 24).join(", ");
       const cond = (char.activeConditions?.length ? char.activeConditions.join(",") : "none");
 
       const dbgBlock =
         `[arb: input="${preview}" | ${decisionStr}]\n` +
         `[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
 
+      const rollBlock = __rollLine ? `${__rollLine}\n` : "";
       const observerBlock = __observerLine ? `${__observerLine}\n` : "";
 
       // prepend debug to the narrator reply so it shows *just before* prose
-      reply = `${dbgBlock}\n${observerBlock}\n${reply}`;
+      reply = `${dbgBlock}\n${rollBlock}${observerBlock}\n${reply}`;
     }
 
     return res.status(200).json({ reply, scenario: scenario.id });
