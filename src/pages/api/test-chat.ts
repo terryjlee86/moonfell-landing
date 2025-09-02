@@ -194,6 +194,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     systemDoc
   );
 
+  // --- Options Guard: restrict suggested options to items/capabilities that actually exist now ---
+  try {
+    // 1) Player kit names (from inventory feed)
+    const invItems = (inv as any)?.list?.items ?? [];
+    const kitNames: string[] = invItems
+      .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
+      .filter((s: string) => !!s);
+
+    // 2) Scene affordances (from env tags)
+    const sceneItems: string[] = (ctx.tags || [])
+      .filter((t) => t.startsWith("env:item:"))
+      .map((t) => t.split(":")[2])
+      .filter(Boolean);
+
+    // 3) Soft guard (hidden) — narrator uses only what’s present when offering numbered options
+    const optionsGuard = `
+# OPTIONS GUARD (hidden; do not expose)
+When offering the 3–5 numbered options, only suggest actions using items/capabilities that are actually present now.
+- Player kit (by name): ${kitNames.length ? kitNames.join(", ") : "none"}
+- Scene affordances: ${sceneItems.length ? sceneItems.join(", ") : "none"}
+
+Rules:
+- Do NOT suggest actions that rely on unavailable gear (e.g., "attack with dagger" if no dagger in kit).
+- Prefer functional categories when appropriate (e.g., "attack with your blade", "throw a stone") that map to present items.
+- Keep 3–5 options, distinct in shape (attack / defend / move / throw / speak / use-scene).
+- Remain within scenario boundaries; no rail-breaking options.
+`.trim();
+
+    SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${optionsGuard}`;
+  } catch {
+    // If anything goes wrong, skip guard — never block play
+  }
+
   // Build a specific prohibition message for this turn if auto-fail with needs-*
   const extraSystemGuards: Array<{ role: "system"; content: string }> = [];
   if (arbiterDecision && arbiterDecision.kind === "auto-fail") {
