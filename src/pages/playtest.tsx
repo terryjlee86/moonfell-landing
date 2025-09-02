@@ -10,8 +10,12 @@ export default function Playtest() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
-  const [debug, setDebug] = useState(false);       // existing: Arbiter/Feeds/Observer debug
-  const [debugRoll, setDebugRoll] = useState(false); // NEW: Rolls debug
+
+  // Debug toggles
+  const [debug, setDebug] = useState(false);           // Arbiter + Observer debug
+  const [debugRoll, setDebugRoll] = useState(false);   // Rolls math banner
+  const [debugFeeds, setDebugFeeds] = useState(false); // NEW: feed tag wall on/off
+
   const viewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,8 +64,9 @@ export default function Playtest() {
           message: userTurn.content,
           history,               // keep as-is
           scenarioId: "forest_ambush",
-          debug,                 // existing: general debug (arb/feeds/observer)
-          debugRoll,             // NEW: rolls debug
+          debug,                 // Arbiter/Observer
+          debugRoll,             // Rolls
+          debugFeeds,            // NEW: feeds tag wall
         }),
       });
       const j = await r.json();
@@ -140,8 +145,9 @@ export default function Playtest() {
             </div>
 
             {/* Debug toggles + input row */}
-            <div style={{ ...styles.inputRow, alignItems: "center" }}>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <div style={{ ...styles.inputRow, alignItems: "center", flexWrap: "wrap", rowGap: 8 }}>
+              {/* Arbiter/Observer debug */}
+              <label style={styles.checkbox}>
                 <input
                   type="checkbox"
                   checked={debug}
@@ -150,8 +156,8 @@ export default function Playtest() {
                 Debug
               </label>
 
-              {/* NEW: Rolls debug */}
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {/* Rolls debug */}
+              <label style={styles.checkbox}>
                 <input
                   type="checkbox"
                   checked={debugRoll}
@@ -160,7 +166,17 @@ export default function Playtest() {
                 Rolls
               </label>
 
-              <form onSubmit={send} style={{ display: "flex", gap: 8, flex: 1 }}>
+              {/* NEW: Feeds toggle */}
+              <label style={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={debugFeeds}
+                  onChange={(e) => setDebugFeeds(e.target.checked)}
+                />
+                Feeds
+              </label>
+
+              <form onSubmit={send} style={{ display: "flex", gap: 8, flex: 1, minWidth: 380 }}>
                 <input
                   type="text"
                   placeholder="Describe exactly what you do…"
@@ -231,6 +247,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: 12,
   },
+  checkbox: { display: "inline-flex", alignItems: "center", gap: 8, marginRight: 8 },
   input: {
     flex: 1,
     padding: "12px 14px",
