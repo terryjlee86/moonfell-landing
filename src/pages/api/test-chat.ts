@@ -72,6 +72,13 @@ function buildSystemPrompt(
 - Current Kit (from feeds): ${groundTruth.kitNames.length ? groundTruth.kitNames.join(", ") : "(none)"}
 `.trim();
 
+  // Tiny rule so the arbiter resolves numeric replies against its own options
+  const choiceResolutionBlock = `
+# Choice Resolution (hidden; do not expose)
+If the player replies with a number (e.g., "1"), resolve it against the numbered options you just offered this turn.
+Use feeds and any provided choiceHints to disambiguate item/verb. Feeds override scenario or prior assumptions.
+`.trim();
+
   return `
 You are the Moonfell encounter engine.
 
@@ -96,6 +103,8 @@ ${enc || "[No encounter doc]"}
 
 ${groundTruthBlock}
 
+${choiceResolutionBlock}
+
 # Output Contract
 - Follow **PLAYER INTERFACE**, **NARRATION ETIQUETTE**, and **START THE SCENE** in the Conductor Guide.
 - Always include **3–5 numbered, straightforward options**.
@@ -103,6 +112,18 @@ ${groundTruthBlock}
 - No fourth wall. If the user types **"debug please"**, append one short \`[dbg: …]\` line.
 - Stay within scenario boundaries; if the player tries to leave, redirect (limited preview).
 `.trim();
+}
+
+// ---------- helper: soft choice hints for the arbiter (feeds-driven, not scripting) ----------
+function findTagSlug(tags: string[], prefix: string): string | null {
+  const t = tags.find((x) => x.startsWith(prefix));
+  return t ? t.slice(prefix.length) : null;
+}
+function nameForSlug(tags: string[], slug: string | null): string | null {
+  if (!slug) return null;
+  const p = `pc:name:${slug}=`;
+  const t = tags.find((x) => x.startsWith(p));
+  return t ? t.slice(p.length) : null;
 }
 
 // ---------- handler ----------
@@ -192,13 +213,64 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx  = contextFeed();      // { tags: string[] }
   const lrn  = learnedFeed();      // { tags: string[], list: {...} }
 
-  // Ask the Rolls DM with feeds
+  // ---------- Soft choice hints (feeds → likely mapping) ----------
+  const softOptionHints: string[] = (() => {
+    const hints: string[] = [];
+
+    // 1) Attack with main-hand melee if present
+    if (inv.tags.includes("pc:weapon:melee")) {
+      const mhSlug = findTagSlug(inv.tags, "pc:hand:main:");
+      const mhName = nameForSlug(inv.tags, mhSlug) ||
+        (inv.list.items.find((it: any) => it.kind === "melee")?.name ?? "melee weapon");
+      hints.push(`1: attack with ${mhName} (melee)`);
+    }
+
+    // 2) Defend with shield if present
+    if (inv.tags.includes("pc:shield")) {
+      // Try to find a shield name
+      const shieldSlug = ((): string | null => {
+        // look for a name tag that likely matches a shield item
+        const nameTag = inv.tags.find((t) => t.startsWith("pc:name:") && t.includes("buckler")) || null;
+        return nameTag ? nameTag.slice("pc:name:".length).split("=")[0] : null;
+      })();
+      const shieldName = nameForSlug(inv.tags, shieldSlug) ||
+        (inv.list.items.find((it: any) => it.kind === "shield")?.name ?? "shield");
+      hints.push(`2: defend with ${shieldName} (defend)`);
+    }
+
+    // 3) Throwing axe if available
+    const throwingAxeCount = (() => {
+      const t = inv.tags.find((t) => t.startsWith("pc:throwing-axe:"));
+      if (!t) return 0;
+      const n = Number(t.split(":")[2]);
+      return isNaN(n) ? 0 : n;
+    })();
+    if (throwingAxeCount > 0) {
+      const taName = inv.list.items.find((it: any) => it.kind === "throwing-axe")?.name ?? "Throwing Axe";
+      hints.push(`3: throw ${taName} (ranged/throw)`);
+    }
+
+    // 4) Social attempt is generally available
+    hints.push("4: social attempt (negotiate/intimidate)");
+
+    // 5) Use environment if affordances exist
+    const hasEnvAff = ctx.tags.some((t) => t.startsWith("env:item:"));
+    if (hasEnvAff) {
+      // crude list; just present as concept
+      hints.push("5: use environment (stones/branches/positioning)");
+    }
+
+    return hints;
+  })();
+
+  // Ask the Rolls DM with feeds (+ soft hints to disambiguate numeric replies)
   try {
     arbiterDecision = await getRollDecision({
       message: userMessage,
       sceneTags: ctx.tags,
       inventoryTags: inv.tags,
       learnedTags: lrn.tags,
+      choiceHints: softOptionHints, // <— NEW: guidance, not scripting
       character: {
         name: char.name,
         stance: char.stance,
