@@ -142,9 +142,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     arbiterDecision = await getRollDecision({
       message: userMessage,
-      sceneTags: ctx.tags,            // rails + creatures
-      inventoryTags: inv.tags,        // shield/ranged/light/rope/healing/throwable:X
-      learnedTags: lrn.tags,          // pc:skill:*, pc:spell:*
+      sceneTags: ctx.tags,
+      inventoryTags: inv.tags,
+      learnedTags: lrn.tags,
       character: {
         name: char.name,
         stance: char.stance,
@@ -172,11 +172,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       seedParts: {
         scenarioId: scenario.id,
         turn: (Array.isArray(history) ? history.length : 0) + 1,
-        userHash: "anon", // you can pass a real hash later if desired
+        userHash: "anon",
         extra: "hit",
       },
       debugRoll: !!debugRoll,
-      // simple baselines; can be adjusted later or read from creature tags
       defenderDefenseBonus: 2,
       attackerAbilityBonus: 0,
     });
@@ -216,7 +215,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...extraSystemGuards, // <<— strictly forbids specific needs-* items for this turn
+    ...extraSystemGuards,
     ...(Array.isArray(history) ? history.slice(-8) : []),
     { role: "user", content: userMessage },
   ];
@@ -254,7 +253,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const existing = new Set(env.items.map(it => `${it.slug}@${it.where}`));
 
         const filtered = envDeltas.filter(d => {
-          if (d.type !== "environment" || d.op !== "add") return true; // pass through non-adds
+          if (d.type !== "environment" || d.op !== "add") return true;
           const key = `${(d as any).slug}@${(d as any).where}`;
           return !existing.has(key);
         });
@@ -267,10 +266,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (added.length) __observerLine = `[obs: added ${added.join(", ")}]`;
         }
       }
-    } catch { /* never block play */ }
+    } catch {}
 
-    // ---------- Debug output (optional; does not change the narrator’s prose) ----------
-    if (debug === true || debugRoll === true) {
+    // ---------- Debug output ----------
+    // 1) General debug (arbiter + feeds + observer) — only when `debug` is true
+    if (debug === true) {
       const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
 
       const decisionStr = (() => {
@@ -314,11 +314,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         `[arb: input="${preview}" | ${decisionStr}]\n` +
         `[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
 
-      const rollBlock = __rollLine ? `${__rollLine}\n` : "";
       const observerBlock = __observerLine ? `${__observerLine}\n` : "";
 
-      // prepend debug to the narrator reply so it shows *just before* prose
-      reply = `${dbgBlock}\n${rollBlock}${observerBlock}\n${reply}`;
+      reply = `${dbgBlock}\n${observerBlock}\n${reply}`;
+    }
+
+    // 2) Rolls debug — only when `debugRoll` is true
+    if (debugRoll === true && __rollLine) {
+      reply = `${__rollLine}\n${reply}`;
     }
 
     return res.status(200).json({ reply, scenario: scenario.id });
