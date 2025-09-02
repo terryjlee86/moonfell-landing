@@ -1,3 +1,4 @@
+
 # Rolls Rules (Moonfell)
 
 ## Purpose
@@ -10,6 +11,7 @@ The AI must use **feeds** (`inventory`, `learned`, `context`, `character`) as th
 - If the action is possible but requires chance, return a **roll** (fixed or opposed).
 - If the action is pure ambience, return **no-roll**.
 - If the action uses an **existing non-weapon item** (book, rock, lantern, rope) as a weapon/tool, treat it as **improvised** (see below).
+- The AI should also decide which **stat** (ability) to use for the roll by reasoning from fiction + rules below, not just keyword match.
 
 ---
 
@@ -53,15 +55,13 @@ Impossible under current physics or fiction, or **feeds prove** a required prere
 ---
 
 ### 4) Fixed DC
-Environmental/object interactions with a set difficulty.
-- Climb, jump, force a door, balance, pick a lock.
-- Choose ability by fiction:
-  - STR → brute force (shove, lift, break).
-  - AGI → balance, speed, accuracy, throwing.
-  - END → stamina, resisting fatigue/poison.
-  - INT → analysis, recall, tactics, device use.
-  - WIL → focus, resisting fear/pain, keeping calm.
-  - CHA → inspiring allies, rallying crowds.
+- Choose ability by **fictional context**, not just keywords:
+  - STR → brute force (shove, lift, break; also heavy blunt improvised attacks).
+  - AGI → balance, speed, finesse, accuracy, ranged throws (stones, knives, spears).
+  - END → stamina, resisting fatigue/poison/environmental hardship.
+  - INT → analysis, recall, tactics, device use, reasoning.
+  - WIL → focus, resisting fear/pain, keeping calm, magical will.
+  - CHA → inspiring allies, persuasion, intimidation, deception.
 - Optional DC hint: `easy | standard | hard | heroic`.
 
 **Tag:** `["fixed-action"]`
@@ -130,6 +130,13 @@ Players may use **existing** objects as improvised tools/weapons **if the object
 
 **Do not** invent objects that are not in feeds **unless** the case meets **Ambient Affordances (Immediate)** (generic + biome-plausible). Otherwise, auto-fail with a clear `needs-<thing>` tag.
 
+**Ability choice for improvised items:**
+- Thrown items (stones, knives, bottles) → **AGI** by default (accuracy/finesse).
+- Heavy blunt melee improvised (logs, chairs, big rocks) → **STR**.
+- Fragile, finesse-based (lanterns, delicate distractions) → **AGI**.
+- Rope / binding actions → **AGI or STR** depending on fiction (snag vs raw strength).
+
+
 ## Player Assertions vs Ground Truth
 
 - A player **claiming** an object exists (e.g. *“there is a seashell on the floor”*) does **not** make it real.  
@@ -138,6 +145,7 @@ Players may use **existing** objects as improvised tools/weapons **if the object
   - **Biome-plausible** (rocks in a gorge, branches in a forest).  
 - If the player asserts something implausible for the biome and it is not in feeds, return **auto-fail** with a clear `needs-*` tag.  
 - Never promote player-asserted items into the environment just because the phrasing suggests it’s visible.  
+- Always decide the roll’s **ability** based on the fiction of the action (see Fixed DC + Improvised Items). Do not assume STR for all improvised weapons.
 
 **Examples:**  
 - “There is a seashell on the floor, I pick it up” → **Auto-Fail**, `["needs-sea-shell"]` (not biome-plausible).  
