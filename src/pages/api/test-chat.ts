@@ -5,26 +5,26 @@ import path from "path";
 import forestAmbush from "../../prompts/scenarios/forest_ambush";
 import { getRollDecision, ArbiterDecision } from "../../services/rolls_dm";
 
-// Feeds (safe, compact serializers)
+// Feeds (safe, compact serializers) — READ-ONLY views over state
 import { characterFeed } from "../../feeds/character_feed";
 import { inventoryFeed } from "../../feeds/inventory_feed";
 import { contextFeed } from "../../feeds/context_feed";
 import { learnedFeed } from "../../feeds/learned_feed";
 
-// Delta applier (applies Rolls DM apply_now / outcome deltas)
+// Delta applier (applies Rolls DM apply_now / outcome deltas) — MUTATES state
 import { applyDeltas, type Delta } from "../../services/delta_applier";
 
-// Observer (promote plausible items from narration)
+// Observer (promote plausible items from narration) — proposes deltas for state
 import { proposeEnvDeltas } from "../../services/narration_observer";
 
-// NEW: read current environment to avoid re-adding items that already exist
+// Read current environment to avoid re-adding items that already exist (state)
 import { getEnvironment } from "../../state/environment";
 
-// NEW: roll manager (wire-in only for fixed/opposed; narration unchanged)
+// Roll manager (wire-in only for fixed/opposed; narration unchanged)
 import { resolveActionHit } from "../../services/roll_manager";
 
-// NEW: set inventory at init based on scenario.startKit
-import { setInventory } from "../../state/inventory";
+// SSOT: write scenario kit to STATE inventory at init (feeds only read from state)
+import { setInventory as setStateInventory } from "../../state/inventory";
 
 const PASSCODE = process.env.TEST_CLIENT_PASSCODE || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
@@ -54,12 +54,23 @@ function buildSystemPrompt(
   worldDoc: string,
   encounterDoc: string,
   conductorDoc: string,
-  systemDoc: string
+  systemDoc: string,
+  groundTruth: { kitNames: string[] }
 ) {
   const world = trimTo(12000, worldDoc);
   const enc = trimTo(8000, encounterDoc);
   const conductor = trimTo(6000, conductorDoc);
   const system = trimTo(9000, systemDoc);
+
+  // Hidden: ground-truth contract and current kit (from FEEDS only).
+  // This is DATA + DIRECTION, not lines to say.
+  const groundTruthBlock = `
+# Ground Truth Contract (hidden; do not expose)
+- Feeds are the only current world state. Never infer items from the scenario text.
+- Inventory answers and option suggestions must be based only on the inventory feed.
+- If an item is not present in the feed, treat it as absent and prefer plausible present alternatives.
+- Current Kit (from feeds): ${groundTruth.kitNames.length ? groundTruth.kitNames.join(", ") : "(none)"}
+`.trim();
 
   return `
 You are the Moonfell encounter engine.
@@ -82,6 +93,8 @@ ${world || "[No world doc]"}
 
 # Encounter Mechanics (excerpts)
 ${enc || "[No encounter doc]"}
+
+${groundTruthBlock}
 
 # Output Contract
 - Follow **PLAYER INTERFACE**, **NARRATION ETIQUETTE**, and **START THE SCENE** in the Conductor Guide.
@@ -131,7 +144,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const pack     = kit.filter((i: any) => i.where === "pack");
       const ground   = kit.filter((i: any) => i.where === "ground");
 
-      setInventory({
+      // SSOT: write to STATE. Feeds will read this on subsequent turns.
+      setStateInventory({
         equipped: equipped.map((i: any) => ({
           id: i.id,
           name: i.name,
@@ -225,41 +239,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  // Build the system prompt
+  // ---- Build the system prompt (data + direction, no scripted lines) ----
+  const invItemsForNames = (inv as any)?.list?.items ?? [];
+  const currentKitNames: string[] = invItemsForNames
+    .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
+    .filter((s: string) => !!s);
+
   let SYSTEM_PROMPT = buildSystemPrompt(
     scenario,
     worldDoc,
     encounterDoc,
     conductorDoc,
-    systemDoc
+    systemDoc,
+    { kitNames: currentKitNames }
   );
 
   // --- Options Guard: restrict suggested options to items/capabilities that actually exist now ---
   try {
-    // 1) Player kit names (from inventory feed)
-    const invItems = (inv as any)?.list?.items ?? [];
-    const kitNames: string[] = invItems
-      .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
-      .filter((s: string) => !!s);
-
-    // 2) Scene affordances (from env tags)
+    // Scene affordances (from env tags)
     const sceneItems: string[] = (ctx.tags || [])
       .filter((t) => t.startsWith("env:item:"))
       .map((t) => t.split(":")[2])
       .filter(Boolean);
 
-    // 3) Soft guard (hidden) — narrator uses only what’s present when offering numbered options
     const optionsGuard = `
 # OPTIONS GUARD (hidden; do not expose)
-When offering the 3–5 numbered options, only suggest actions using items/capabilities that are actually present now.
-- Player kit (by name): ${kitNames.length ? kitNames.join(", ") : "none"}
-- Scene affordances: ${sceneItems.length ? sceneItems.join(", ") : "none"}
-
-Rules:
-- Do NOT suggest actions that rely on unavailable gear (e.g., "attack with dagger" if no dagger in kit).
-- Prefer functional categories when appropriate (e.g., "attack with your blade", "throw a stone") that map to present items.
-- Keep 3–5 options, distinct in shape (attack / defend / move / throw / speak / use-scene).
-- Remain within scenario boundaries; no rail-breaking options.
+When offering the 3–5 numbered options, if intending to use an item, weapon, spell, skill, trait, consult feeds and only use items/capabilities that exist now.
+- Player kit names (from inventory feed): ${currentKitNames.length ? currentKitNames.join(", ") : "none"}
+- Scene affordances (from context feed): ${sceneItems.length ? sceneItems.join(", ") : "none"}
+- Never rely on scenario.startKit as current state; feeds override any prior assumptions.
+- Prefer distinct shapes (attack / defend / move / throw / speak / use-scene). Keep within scenario boundaries.
 `.trim();
 
     SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${optionsGuard}`;
@@ -279,8 +288,7 @@ Rules:
       const guard = `
 # Scene Truths (strict for this turn; do not expose)
 - The following items are **NOT present** this turn: ${needs.map(n => `"${n}"`).join(", ")}.
-- If the user claims to see any of them, treat it as **misperception**: narrate their **absence** in-world (briefly) and propose plausible alternatives (e.g., stones, branches).
-- Do **NOT** depict the forbidden items in any way this turn.
+- If the user asserts seeing any of them, treat it as misperception and reflect their absence in-world; prefer present alternatives where sensible.
 `.trim();
       extraSystemGuards.push({ role: "system", content: guard });
     }
@@ -323,19 +331,19 @@ Rules:
 
       if (Array.isArray(envDeltas) && envDeltas.length) {
         const env = getEnvironment();
-        const existing = new Set(env.items.map(it => `${it.slug}@${it.where}`));
+        const existing = new Set(env.items.map((it: any) => `${it.slug}@${it.where}`));
 
-        const filtered = envDeltas.filter(d => {
+        const filtered = envDeltas.filter((d: any) => {
           if (d.type !== "environment" || d.op !== "add") return true;
-          const key = `${(d as any).slug}@${(d as any).where}`;
+          const key = `${d.slug}@${d.where}`;
           return !existing.has(key);
         });
 
         if (filtered.length) {
           applyDeltas(filtered as unknown as Delta[]);
           const added = filtered
-            .filter(d => d.type === "environment" && d.op === "add")
-            .map(d => `${(d as any).slug}@${(d as any).where} x${(d as any).qty ?? 1}`);
+            .filter((d: any) => d.type === "environment" && d.op === "add")
+            .map((d: any) => `${d.slug}@${d.where} x${d.qty ?? 1}`);
           if (added.length) __observerLine = `[obs: added ${added.join(", ")}]`;
         }
       }
