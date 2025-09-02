@@ -130,14 +130,24 @@ function nameForSlug(tags: string[], slug: string | null): string | null {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { passcode, init, message, history = [], scenarioId, debug, debugRoll } = (req.body || {}) as {
+  const {
+    passcode,
+    init,
+    message,
+    history = [],
+    scenarioId,
+    debug,
+    debugRoll,
+    debugFeeds, // <— NEW
+  } = (req.body || {}) as {
     passcode?: string;
     init?: boolean;
     message?: string;
     history?: Turn[];
     scenarioId?: string;
-    debug?: boolean;      // existing UI toggle (arb/feeds/obs)
-    debugRoll?: boolean;  // NEW: separate toggle for roll math debug
+    debug?: boolean;       // arbiter/observer debug block
+    debugRoll?: boolean;   // roll math banner
+    debugFeeds?: boolean;  // <— NEW: print feed tag wall when true
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
@@ -227,10 +237,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 2) Defend with shield if present
     if (inv.tags.includes("pc:shield")) {
-      // Try to find a shield name
       const shieldSlug = ((): string | null => {
-        // look for a name tag that likely matches a shield item
-        const nameTag = inv.tags.find((t) => t.startsWith("pc:name:") && t.includes("buckler")) || null;
+        const nameTag = inv.tags.find((t) => t.startsWith("pc:name:") && t.includes("Buckler")) || null;
         return nameTag ? nameTag.slice("pc:name:".length).split("=")[0] : null;
       })();
       const shieldName = nameForSlug(inv.tags, shieldSlug) ||
@@ -256,28 +264,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 5) Use environment if affordances exist
     const hasEnvAff = ctx.tags.some((t) => t.startsWith("env:item:"));
     if (hasEnvAff) {
-      // crude list; just present as concept
       hints.push("5: use environment (stones/branches/positioning)");
     }
 
     return hints;
   })();
 
-  // Ask the Rolls DM with feeds (+ soft hints to disambiguate numeric replies)
+  // ---------- Ask the Rolls DM with feeds (+ soft hints; compile-safe) ----------
   try {
-    arbiterDecision = await getRollDecision({
+    // Build payload with known shape; attach hints only if present to avoid TS complaining
+    const arbiterPayload: any = {
       message: userMessage,
       sceneTags: ctx.tags,
       inventoryTags: inv.tags,
       learnedTags: lrn.tags,
-      choiceHints: softOptionHints, // <— NEW: guidance, not scripting
       character: {
         name: char.name,
         stance: char.stance,
         stats: char.stats,
         activeConditions: char.activeConditions,
       },
-    });
+    };
+    if (softOptionHints.length) arbiterPayload.choiceHints = softOptionHints; // compile-safe
+
+    arbiterDecision = await getRollDecision(arbiterPayload);
 
     // Apply immediate state changes proposed by the Rolls DM (if any)
     if (arbiterDecision && (arbiterDecision as any).apply_now) {
@@ -287,7 +297,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     arbiterDecision = null; // never block the player flow if arbiter fails
   }
 
-  // NEW — Run Roll Manager (mechanical roll only; narration unchanged)
+  // ---------- Roll Manager (mechanical roll only; narration unchanged) ----------
   let __rollLine = "";
   if (arbiterDecision && (arbiterDecision.kind === "fixed" || arbiterDecision.kind === "opposed")) {
     const out = resolveActionHit({
@@ -434,7 +444,6 @@ Rules:
     } catch {}
 
     // ---------- Debug output ----------
-    // 1) General debug (arbiter + feeds + observer) — only when `debug` is true
     if (debug === true) {
       const preview = userMessage.replace(/\s+/g, " ").slice(0, 140);
 
@@ -472,19 +481,20 @@ Rules:
         }
       })();
 
-      const feedTags = [...ctx.tags, ...inv.tags, ...lrn.tags].slice(0, 24).join(", ");
-      const cond = (char.activeConditions?.length ? char.activeConditions.join(",") : "none");
+      // Feed wall only when debugFeeds is true
+      let feedLine = "";
+      if (debugFeeds === true) {
+        const feedTags = [...ctx.tags, ...inv.tags, ...lrn.tags].slice(0, 120).join(", ");
+        feedLine = `\n[feeds: ${feedTags} | stance=${char.stance} cond=${(char.activeConditions?.length ? char.activeConditions.join(",") : "none")}]`;
+      }
 
-      const dbgBlock =
-        `[arb: input="${preview}" | ${decisionStr}]\n` +
-        `[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
+      const arbLine = `[arb: input="${preview}" | ${decisionStr}]`;
+      const observerBlock = __observerLine ? `\n${__observerLine}` : "";
 
-      const observerBlock = __observerLine ? `${__observerLine}\n` : "";
-
-      reply = `${dbgBlock}\n${observerBlock}\n${reply}`;
+      reply = `${arbLine}${feedLine}${observerBlock}\n\n${reply}`;
     }
 
-    // 2) Rolls debug — only when `debugRoll` is true
+    // Rolls debug — only when `debugRoll` is true
     if (debugRoll === true && __rollLine) {
       reply = `${__rollLine}\n${reply}`;
     }
