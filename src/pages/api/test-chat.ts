@@ -181,7 +181,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...extraSystemGuards, // <<— strongly binds the forbidden nouns for this turn
+    ...extraSystemGuards, // <<— strictly forbids specific needs-* items for this turn
     ...(Array.isArray(history) ? history.slice(-8) : []),
     { role: "user", content: userMessage },
   ];
