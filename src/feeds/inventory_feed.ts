@@ -1,12 +1,11 @@
-// src/feeds/inventory_feed.ts
-//
-// Derives compact capability tags from inventory items, including WEARABLE SLOTS.
-// - Emits specific ranged tags: pc:bow, pc:crossbow, pc:throwing-axe:N
-// - Emits generic weapon caps: pc:weapon:ranged, pc:weapon:thrown, pc:weapon:melee
-// - Emits wearables: pc:wear:<slot> and pc:wear:<slot>:<slug> for EQUIPPED items
-// - Emits pack wearables: pc:pack:<slot>:<slug> for NOT EQUIPPED items carried
-// - Keeps umbrella tags for backward-compat: pc:ranged, pc:throwable:N, pc:shield, pc:rope, pc:healing, pc:light:<state>
-// - Aggregates armor tier across equipped wearables: pc:armor:light|medium|heavy
+/**
+ * FILE: src/feeds/inventory_feed.ts
+ * WHAT: Single source of truth for player inventory → compact feed tags.
+ * HOW: Holds an in-memory inventory list set via setInventory(); derives capability tags
+ *      (melee/ranged/thrown/shield/rope/healing/light), wearables (pc:wear / pc:pack),
+ *      and aggregated armor tier. This file does NOT invent items — if no inventory has
+ *      been set, it emits only `pc:light:none` and returns an empty list.
+ */
 
 export type WearableSlot =
   | "head" | "chest" | "hands" | "legs" | "feet"
@@ -32,26 +31,28 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-// ---- Demo/default inventory (replace with your real source as needed) ----
-let _items: InvItem[] = [
-  { id: "longsword", name: "Iron Longsword", kind: "melee", qty: 1 },
-  { id: "buckler", name: "Buckler", kind: "shield", qty: 1 },
-  { id: "t-axe", name: "Throwing Axe", kind: "throwing-axe", qty: 1 },
-  { id: "torch1", name: "Torch", kind: "torch", qty: 1, state: "unlit" },
-  { id: "rope1", name: "Rope (10 m)", kind: "rope", qty: 1 },
-  { id: "bandage", name: "Basic Bandages", kind: "healing", qty: 1 },
-  // Wearables examples (commented out):
-  // { id: "steel-helm", name: "Steel Helmet", kind: "wearable", slot: "head", equipped: true, armorTier: "medium" },
-  // { id: "leather-hauberk", name: "Leather Hauberk", kind: "wearable", slot: "chest", equipped: true, armorTier: "light" },
-];
+// ---- Inventory store (no demo defaults) ----
+// NOTE: Inventory must be populated by scenario/init via setInventory(...)
+let _items: InvItem[] = [];
 
-export function setInventory(items: InvItem[]) { _items = Array.isArray(items) ? items.slice() : []; }
-export function getInventory(): InvItem[] { return _items.slice(); }
+export function setInventory(items: InvItem[]) {
+  _items = Array.isArray(items) ? items.slice() : [];
+}
+
+export function getInventory(): InvItem[] {
+  return _items.slice();
+}
 
 // ---- Tag derivation ----
 export function inventoryFeed(): { tags: string[]; list: { items: InvItem[] } } {
   const items = getInventory();
   const tags: string[] = [];
+
+  // If inventory hasn’t been set, emit only a neutral light state and return.
+  if (items.length === 0) {
+    tags.push("pc:light:none");
+    return { tags, list: { items } };
+  }
 
   // Counts by kind
   const countByKind = items.reduce<Record<string, number>>((acc, it) => {
@@ -95,7 +96,8 @@ export function inventoryFeed(): { tags: string[]; list: { items: InvItem[] } } 
 
   // ---- Wearables processing ----
   let armorRank = 0; // 0 none, 1 light, 2 medium, 3 heavy
-  const rank = (t?: "light"|"medium"|"heavy") => (t === "heavy" ? 3 : t === "medium" ? 2 : t === "light" ? 1 : 0);
+  const rank = (t?: "light"|"medium"|"heavy") =>
+    (t === "heavy" ? 3 : t === "medium" ? 2 : t === "light" ? 1 : 0);
 
   items.forEach((it) => {
     if (it.kind !== "wearable" || !it.slot) return;
