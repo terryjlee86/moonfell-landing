@@ -124,7 +124,7 @@ type OptionMap = Record<"1" | "2" | "3" | "4" | "5", string | null>;
 
 /**
  * Build a feeds-grounded map from 1..5 to intended option phrases.
- * These phrases are only used to expand numeric user input before we call the arbiter.
+ * These phrases are used as a fallback if the server cannot extract narrator options from history.
  */
 function buildOptionMap(inv: ReturnType<typeof inventoryFeed>, ctx: ReturnType<typeof contextFeed>): OptionMap {
   const map: OptionMap = { "1": null, "2": null, "3": null, "4": null, "5": null };
@@ -263,6 +263,51 @@ function normalizeArbiterDecision(
   return decision;
 }
 
+/* ---------- NEW: Server-side numeric choice resolver (Step 2)
+   Purpose:
+   - Extract the last 3–5 options from the previous assistant message.
+   - Robustly parse lines that look like "1. ...", "2) ...", "3 - ...", possibly with **bold**.
+   - Build a mapping 1..5 → exact option text. Prefer this mapping over feed-derived mapping.
+*/
+function extractNumberedOptionsFromHistory(history: Turn[]): OptionMap {
+  const map: OptionMap = { "1": null, "2": null, "3": null, "4": null, "5": null };
+  if (!Array.isArray(history) || history.length === 0) return map;
+
+  // Find the last assistant message
+  let lastAssistant: string | null = null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role === "assistant" && typeof history[i]?.content === "string") {
+      lastAssistant = history[i].content;
+      break;
+    }
+  }
+  if (!lastAssistant) return map;
+
+  // Split into lines and parse numbered options.
+  const lines = lastAssistant.split(/\r?\n/);
+  const optionLine =
+    /^\s*([1-5])[\.\)\-:]\s+(\*{0,2})(.+?)(\*{0,2})\s*$/; // capture number + optional **bold** wrappers
+
+  for (const line of lines) {
+    const m = line.match(optionLine);
+    if (!m) continue;
+    const num = m[1] as "1" | "2" | "3" | "4" | "5";
+    let text = m[3].trim();
+
+    // Strip trailing spaces/punctuation that don't change semantics
+    text = text.replace(/\s+$/, "");
+    // Leave punctuation in place (LLM expects the exact phrase), but remove bold markers if present elsewhere
+    text = text.replace(/^\*{2}(.+?)\*{2}$/g, "$1");
+
+    // If we already captured an option for that number, keep the first one encountered.
+    if (map[num] == null) {
+      map[num] = text;
+    }
+  }
+
+  return map;
+}
+
 // ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -358,12 +403,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx  = contextFeed();      // { tags: string[] }
   const lrn  = learnedFeed();      // { tags: string[], list: {...} }
 
-  // Build feeds-grounded option map and expand numeric selection BEFORE arbiter
-  const optionMap = buildOptionMap(inv, ctx);
+  // Build server-side option map from the last assistant message
+  const serverOptionMap = extractNumberedOptionsFromHistory(history);
+
+  // Build feeds-grounded fallback map
+  const feedOptionMap = buildOptionMap(inv, ctx);
+
+  // Expand numeric selection BEFORE arbiter: prefer server option map, then feed map, else keep raw
   const selectionKey = userMessageRaw.trim().charAt(0) as "1"|"2"|"3"|"4"|"5";
   const expandedMessage =
-    isNumericSelection(userMessageRaw) && optionMap[selectionKey]
-      ? optionMap[selectionKey]!
+    isNumericSelection(userMessageRaw) && (serverOptionMap[selectionKey] || feedOptionMap[selectionKey])
+      ? (serverOptionMap[selectionKey] || feedOptionMap[selectionKey])!
       : userMessageRaw;
 
   // ---------- Arbiter call ----------
