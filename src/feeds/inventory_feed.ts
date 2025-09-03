@@ -202,18 +202,62 @@ export function inventoryFeed(): { tags: string[]; list: { items: InvItem[] } } 
   else if (armorRank === 2)tags.push("pc:armor:medium");
   else if (armorRank === 1)tags.push("pc:armor:light");
 
-  // Optional location tags if originals include scenario-style "where"
+  // Optional location + source metadata (for grip derivation)
+  const sourceTagsBySlug: Record<string, string[]> = {};
+  const handsBySlug: Record<string, 1 | 2 | "versatile" | undefined> = {};
   try {
     const locs = Array.isArray(originals) ? originals : [];
     for (const src of locs) {
       const slug = slugify(String(src.name || src.id || ""));
       if (!slug) continue;
+
+      // Capture source tags and hands requirement if present in state
+      if (Array.isArray(src.tags)) {
+        sourceTagsBySlug[slug] = src.tags.slice();
+      }
+      if (src.hands === 1 || src.hands === 2 || src.hands === "versatile") {
+        handsBySlug[slug] = src.hands;
+      }
+
       switch (src.where) {
         case "main": tags.push(`pc:hand:main:${slug}`); break;
         case "off":  tags.push(`pc:hand:off:${slug}`);  break;
         case "belt": tags.push(`pc:belt:${slug}`);      break;
         case "pack": tags.push(`pc:pack:${slug}`);      break;
         // "ground" stays env until picked up
+      }
+    }
+  } catch { /* best-effort */ }
+
+  // ---------- Grip derivation ----------
+  // Derive:
+  //  - pc:grip:twohand     (req:2h with off-hand free, or versatile with off-hand free)
+  //  - pc:grip:unsupported (req:2h but off-hand occupied)
+  try {
+    const mainHandTag = tags.find(t => t.startsWith("pc:hand:main:"));
+    const offHandTag  = tags.find(t => t.startsWith("pc:hand:off:"));
+    const offFree = !offHandTag;
+
+    if (mainHandTag) {
+      const mainSlug = mainHandTag.split(":")[3]; // pc:hand:main:<slug>
+      const srcTags = sourceTagsBySlug[mainSlug] || [];
+      const srcHands = handsBySlug[mainSlug];
+
+      // Accept either old tags or new state model as the authority
+      const requires2H = srcTags.includes("req:2h") || srcHands === 2;
+      const versatile  = srcTags.includes("versatile") || srcHands === "versatile";
+
+      if (requires2H) {
+        if (offFree) {
+          tags.push("pc:grip:twohand");
+        } else {
+          tags.push("pc:grip:unsupported");
+        }
+      } else if (versatile) {
+        if (offFree) {
+          tags.push("pc:grip:twohand");
+        }
+        // if off-hand occupied, treat as 1H (no tag)
       }
     }
   } catch { /* best-effort */ }

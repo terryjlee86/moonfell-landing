@@ -52,6 +52,10 @@ export type RollResult = {
   debug?: RollDebug;
 };
 
+// ---- Tunable grip constants (attack side only; damage is handled elsewhere) ----
+const PENALTY_UNSUPPORTED_ATTACK: number = -2; // Encounter Bible: unsupported grip feels worse to hit
+const BONUS_TWOHAND_ATTACK: number = 1;       // Optional small boost when using two hands (versatile or 2H readied)
+
 function dcFromHint(h?: "easy" | "standard" | "hard" | "heroic"): number {
   switch (h) {
     case "easy": return 10;
@@ -92,8 +96,21 @@ export function resolveHit(ctx: RollContext): RollResult {
 
   const abilityBonus = ctx.attackerAbilityBonus ?? 0;
 
+  // ---- Grip-derived attack adjustments (from inventory feed tags) ----
+  const isUnsupported = tags.includes("pc:grip:unsupported");
+  const isTwoHand = tags.includes("pc:grip:twohand") && !isUnsupported;
+
+  let gripAttackAdj = 0;
+  if (isUnsupported) {
+    gripAttackAdj += PENALTY_UNSUPPORTED_ATTACK;
+    atkMods.applied.push({ source: "grip:unsupported", value: PENALTY_UNSUPPORTED_ATTACK });
+  } else if (isTwoHand && BONUS_TWOHAND_ATTACK !== 0) {
+    gripAttackAdj += BONUS_TWOHAND_ATTACK;
+    atkMods.applied.push({ source: "grip:twohand", value: BONUS_TWOHAND_ATTACK });
+  }
+
   // Attack total
-  const totalAttack = r.used + abilityBonus + atkMods.bonus;
+  const totalAttack = r.used + abilityBonus + atkMods.bonus + gripAttackAdj;
 
   // Target: fixed DC or simple defense baseline (until creature stats exist)
   let target = 0;
