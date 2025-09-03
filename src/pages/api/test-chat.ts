@@ -172,6 +172,97 @@ function buildOptionMap(inv: ReturnType<typeof inventoryFeed>, ctx: ReturnType<t
   return map;
 }
 
+/* ---------- NEW: Arbiter normalizer (Step 1) ----------
+   Purpose:
+   - If user intent is a melee-type attack and a main-hand weapon exists, enforce weapon classification.
+   - Do NOT override explicit improvised intent (e.g., "hit with branch/stone") when the env item exists.
+   - Do NOT force melee when user intent looks like a throw.
+*/
+function normalizeArbiterDecision(
+  decision: any,
+  inv: ReturnType<typeof inventoryFeed>,
+  ctx: ReturnType<typeof contextFeed>,
+  userIntentText: string
+) {
+  if (!decision) return decision;
+
+  const intent = (userIntentText || "").toLowerCase();
+
+  // If it looks like a throw, don't force melee.
+  const looksLikeThrow = /\bthrow\b|\btoss\b|\bhurl\b/.test(intent);
+  if (looksLikeThrow) return decision;
+
+  // If it looks like a melee-type attack:
+  const meleeVerbs = /\battack\b|\bswing\b|\bstrike\b|\bstab\b|\bslash\b|\bhit\b/;
+  const isAttackIntent = meleeVerbs.test(intent);
+
+  if (!isAttackIntent) return decision;
+
+  // If the player explicitly mentions an improvised object present in env, do not override.
+  const improvisedWords: Array<{ word: RegExp; slug: string }> = [
+    { word: /\bbranch(es)?\b/, slug: "branch" },
+    { word: /\bstick\b/, slug: "branch" },
+    { word: /\bstone(s)?\b/, slug: "stone" },
+    { word: /\brock(s)?\b/, slug: "stone" },
+    { word: /\blog\b/, slug: "log" },
+  ];
+  const ctxItems = new Set(
+    (ctx.tags || [])
+      .filter(t => t.startsWith("env:item:"))
+      .map(t => t.split(":")[2])
+  );
+  const mentionsImprovisedAndExists = improvisedWords.some(({ word, slug }) => word.test(intent) && ctxItems.has(slug));
+  if (mentionsImprovisedAndExists) {
+    return decision; // honor explicit improvised attack
+  }
+
+  // Otherwise, if a main-hand weapon exists, enforce weapon classification.
+  const mhSlug = inv.tags.find(t => t.startsWith("pc:hand:main:"))?.slice("pc:hand:main:".length) || null;
+  if (!mhSlug) return decision;
+
+  const mhName =
+    inv.tags.find(t => t.startsWith(`pc:name:${mhSlug}=`))?.split("=", 2)?.[1] ||
+    inv.list.items.find((it: any) => it.kind === "melee")?.name ||
+    mhSlug;
+
+  // Tags
+  if (!Array.isArray(decision.tags)) decision.tags = [];
+  decision.tags = decision.tags.filter((t: string) => t !== "improvised-attack");
+  if (!decision.tags.includes("melee-attack")) decision.tags.push("melee-attack");
+  const weaponTag = `weapon:${mhSlug}`;
+  if (!decision.tags.includes(weaponTag)) decision.tags.push(weaponTag);
+
+  // Kind / ability / context / reason
+  const ensureReason = () => {
+    if (!decision.reason || typeof decision.reason !== "string" || !decision.reason.trim()) {
+      decision.reason = `Attack with ${mhName}`;
+    }
+  };
+
+  switch (decision.kind) {
+    case "no-roll":
+    case "auto-fail":
+    case "auto-success":
+      ensureReason();
+      break;
+    case "fixed":
+      decision.ability = decision.ability || "STR";
+      decision.context = decision.context || "melee";
+      ensureReason();
+      break;
+    case "opposed":
+    default:
+      decision.kind = "opposed";
+      decision.attackerAbility = decision.attackerAbility || "STR";
+      decision.defender = decision.defender || "creature";
+      decision.context = decision.context || "melee";
+      ensureReason();
+      break;
+  }
+
+  return decision;
+}
+
 // ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -292,6 +383,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
 
     arbiterDecision = await getRollDecision(arbiterPayload);
+
+    // NEW: normalize after arbiter classification, before any deltas or rolls
+    arbiterDecision = normalizeArbiterDecision(arbiterDecision, inv, ctx, expandedMessage);
 
     if (arbiterDecision && (arbiterDecision as any).apply_now) {
       applyDeltas(((arbiterDecision as any).apply_now as Delta[]) || []);
