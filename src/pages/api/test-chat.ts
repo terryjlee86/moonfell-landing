@@ -75,6 +75,12 @@ function buildSystemPrompt(
 - Current Kit (from feeds): ${groundTruth.kitNames.length ? groundTruth.kitNames.join(", ") : "(none)"}
 `.trim();
 
+  const arbiterEtiquette = `
+# Arbiter Output Etiquette (hidden; do not expose)
+- Emit a single concise arbiter line per user input (the structured decision).
+- Do not print extra meta lines like "resolve X action…"; let narration carry the prose.
+`.trim();
+
   return `
 You are the Moonfell encounter engine.
 
@@ -98,6 +104,8 @@ ${world || "[No world doc]"}
 ${enc || "[No encounter doc]"}
 
 ${groundTruthBlock}
+
+${arbiterEtiquette}
 
 # Output Contract
 - Follow **PLAYER INTERFACE**, **NARRATION ETIQUETTE**, and **START THE SCENE** in the Conductor Guide.
@@ -172,11 +180,10 @@ function buildOptionMap(inv: ReturnType<typeof inventoryFeed>, ctx: ReturnType<t
   return map;
 }
 
-/* ---------- NEW: Arbiter normalizer (Step 1) ----------
-   Purpose:
-   - If user intent is a melee-type attack and a main-hand weapon exists, enforce weapon classification.
-   - Do NOT override explicit improvised intent (e.g., "hit with branch/stone") when the env item exists.
-   - Do NOT force melee when user intent looks like a throw.
+/* ---------- Arbiter normalizer ----------
+   - Melee: If user intent is a melee-type attack and a main-hand weapon exists, enforce weapon classification.
+   - Improvised: Do NOT override explicit improvised intent (e.g., "hit with branch/stone") when the env item exists.
+   - Throw: If intent looks like a throw and throwing-axe exists, enforce thrown classification (AGI, context="thrown").
 */
 function normalizeArbiterDecision(
   decision: any,
@@ -188,17 +195,40 @@ function normalizeArbiterDecision(
 
   const intent = (userIntentText || "").toLowerCase();
 
-  // If it looks like a throw, don't force melee.
+  // ---- THROW branch
   const looksLikeThrow = /\bthrow\b|\btoss\b|\bhurl\b/.test(intent);
-  if (looksLikeThrow) return decision;
+  if (looksLikeThrow) {
+    const hasTA = inv.tags.some(t => /^pc:throwing-axe:\d+/.test(t));
+    if (!hasTA) return decision;
 
-  // If it looks like a melee-type attack:
+    if (!Array.isArray(decision.tags)) decision.tags = [];
+    decision.tags = decision.tags.filter((t: string) => t !== "improvised-attack");
+    if (!decision.tags.includes("thrown-attack")) decision.tags.push("thrown-attack");
+    if (!decision.tags.includes("weapon:throwing-axe")) decision.tags.push("weapon:throwing-axe");
+
+    switch (decision.kind) {
+      case "fixed":
+        decision.ability = decision.ability || "AGI";
+        decision.context = decision.context || "thrown";
+        decision.reason = decision.reason || "Throwing axe at target";
+        break;
+      case "opposed":
+      default:
+        decision.kind = "opposed";
+        decision.attackerAbility = decision.attackerAbility || "AGI";
+        decision.defender = decision.defender || "bandit";
+        decision.context = decision.context || "thrown";
+        decision.reason = decision.reason || "Throwing axe at target";
+        break;
+    }
+    return decision;
+  }
+
+  // ---- MELEE branch
   const meleeVerbs = /\battack\b|\bswing\b|\bstrike\b|\bstab\b|\bslash\b|\bhit\b/;
   const isAttackIntent = meleeVerbs.test(intent);
-
   if (!isAttackIntent) return decision;
 
-  // If the player explicitly mentions an improvised object present in env, do not override.
   const improvisedWords: Array<{ word: RegExp; slug: string }> = [
     { word: /\bbranch(es)?\b/, slug: "branch" },
     { word: /\bstick\b/, slug: "branch" },
@@ -212,11 +242,8 @@ function normalizeArbiterDecision(
       .map(t => t.split(":")[2])
   );
   const mentionsImprovisedAndExists = improvisedWords.some(({ word, slug }) => word.test(intent) && ctxItems.has(slug));
-  if (mentionsImprovisedAndExists) {
-    return decision; // honor explicit improvised attack
-  }
+  if (mentionsImprovisedAndExists) return decision;
 
-  // Otherwise, if a main-hand weapon exists, enforce weapon classification.
   const mhSlug = inv.tags.find(t => t.startsWith("pc:hand:main:"))?.slice("pc:hand:main:".length) || null;
   if (!mhSlug) return decision;
 
@@ -225,14 +252,12 @@ function normalizeArbiterDecision(
     inv.list.items.find((it: any) => it.kind === "melee")?.name ||
     mhSlug;
 
-  // Tags
   if (!Array.isArray(decision.tags)) decision.tags = [];
   decision.tags = decision.tags.filter((t: string) => t !== "improvised-attack");
   if (!decision.tags.includes("melee-attack")) decision.tags.push("melee-attack");
   const weaponTag = `weapon:${mhSlug}`;
   if (!decision.tags.includes(weaponTag)) decision.tags.push(weaponTag);
 
-  // Kind / ability / context / reason
   const ensureReason = () => {
     if (!decision.reason || typeof decision.reason !== "string" || !decision.reason.trim()) {
       decision.reason = `Attack with ${mhName}`;
@@ -263,17 +288,13 @@ function normalizeArbiterDecision(
   return decision;
 }
 
-/* ---------- NEW: Server-side numeric choice resolver (Step 2)
-   Purpose:
-   - Extract the last 3–5 options from the previous assistant message.
-   - Robustly parse lines that look like "1. ...", "2) ...", "3 - ...", possibly with **bold**.
-   - Build a mapping 1..5 → exact option text. Prefer this mapping over feed-derived mapping.
+/* ---------- Server-side numeric choice resolver ----------
+   Parse the last assistant message for 1..5 options (tolerates "1.", "2)", "3 -", optional **bold**).
 */
 function extractNumberedOptionsFromHistory(history: Turn[]): OptionMap {
   const map: OptionMap = { "1": null, "2": null, "3": null, "4": null, "5": null };
   if (!Array.isArray(history) || history.length === 0) return map;
 
-  // Find the last assistant message
   let lastAssistant: string | null = null;
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i]?.role === "assistant" && typeof history[i]?.content === "string") {
@@ -283,28 +304,18 @@ function extractNumberedOptionsFromHistory(history: Turn[]): OptionMap {
   }
   if (!lastAssistant) return map;
 
-  // Split into lines and parse numbered options.
   const lines = lastAssistant.split(/\r?\n/);
-  const optionLine =
-    /^\s*([1-5])[\.\)\-:]\s+(\*{0,2})(.+?)(\*{0,2})\s*$/; // capture number + optional **bold** wrappers
+  const optionLine = /^\s*([1-5])[\.\)\-:]\s+(\*{0,2})\s*(.+?)\s*(\*{0,2})\s*$/;
 
   for (const line of lines) {
     const m = line.match(optionLine);
     if (!m) continue;
     const num = m[1] as "1" | "2" | "3" | "4" | "5";
     let text = m[3].trim();
-
-    // Strip trailing spaces/punctuation that don't change semantics
-    text = text.replace(/\s+$/, "");
-    // Leave punctuation in place (LLM expects the exact phrase), but remove bold markers if present elsewhere
-    text = text.replace(/^\*{2}(.+?)\*{2}$/g, "$1");
-
-    // If we already captured an option for that number, keep the first one encountered.
     if (map[num] == null) {
       map[num] = text;
     }
   }
-
   return map;
 }
 
@@ -320,16 +331,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     scenarioId,
     debug,
     debugRoll,
-    debugFeeds, // toggle feed tag wall
+    debugFeeds,
   } = (req.body || {}) as {
     passcode?: string;
     init?: boolean;
     message?: string;
     history?: Turn[];
     scenarioId?: string;
-    debug?: boolean;       // arbiter/observer debug block
-    debugRoll?: boolean;   // roll math banner
-    debugFeeds?: boolean;  // feeds tag wall
+    debug?: boolean;
+    debugRoll?: boolean;
+    debugFeeds?: boolean;
   };
 
   if (!PASSCODE || !OPENAI_API_KEY) {
@@ -345,106 +356,87 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const conductorDoc = safeRead(path.join(process.cwd(), "src", "prompts", "conductor.md"));
   const systemDoc = safeRead(path.join(process.cwd(), "src", "prompts", "system.md"));
 
-  // Choose scenario (extend later if multiple)
   const scenario = forestAmbush;
 
-  // Init: set inventory from scenario.startKit and send scenario intro
+  // Init
   if (init) {
     try {
       const kit = Array.isArray((scenario as any).startKit) ? (scenario as any).startKit : [];
-
       const equipped = kit.filter((i: any) => i.where === "main" || i.where === "off" || i.where === "belt");
       const pack     = kit.filter((i: any) => i.where === "pack");
       const ground   = kit.filter((i: any) => i.where === "ground");
 
-      // SSOT: write to STATE. Feeds will read this on subsequent turns.
       setStateInventory({
-        equipped: equipped.map((i: any) => ({
-          id: i.id,
-          name: i.name,
-          where: i.where,
-          qty: i.qty ?? 1,
-          tags: i.tags,
-          lit: i.lit,
-        })),
-        pack: pack.map((i: any) => ({
-          id: i.id,
-          name: i.name,
-          where: i.where,
-          qty: i.qty ?? 1,
-          tags: i.tags,
-          lit: i.lit,
-        })),
-        ground: ground.map((i: any) => ({
-          id: i.id,
-          name: i.name,
-          where: i.where,
-          qty: i.qty ?? 1,
-          tags: i.tags,
-          lit: i.lit,
-        })),
+        equipped: equipped.map((i: any) => ({ id: i.id, name: i.name, where: i.where, qty: i.qty ?? 1, tags: i.tags, lit: i.lit })),
+        pack: pack.map((i: any) => ({ id: i.id, name: i.name, where: i.where, qty: i.qty ?? 1, tags: i.tags, lit: i.lit })),
+        ground: ground.map((i: any) => ({ id: i.id, name: i.name, where: i.where, qty: i.qty ?? 1, tags: i.tags, lit: i.lit })),
       });
-    } catch {
-      // never block init on failure
-    }
-
-    return res.status(200).json({
-      intro: scenario.introForPlayer,
-      scenario: scenario.id,
-    });
+    } catch {}
+    return res.status(200).json({ intro: scenario.introForPlayer, scenario: scenario.id });
   }
 
   const userMessageRaw = (message || "").trim();
   if (!userMessageRaw) return res.status(400).json({ error: "No message provided" });
 
-  // ---------- Gather feeds (compact, prompt-safe) ----------
-  const char = characterFeed();    // { name, stance, stats, activeConditions }
-  const inv  = inventoryFeed();    // { tags: string[], list: {...} }
-  const ctx  = contextFeed();      // { tags: string[] }
-  const lrn  = learnedFeed();      // { tags: string[], list: {...} }
+  // Feeds
+  const char = characterFeed();
+  const inv  = inventoryFeed();
+  const ctx  = contextFeed();
+  const lrn  = learnedFeed();
 
-  // Build server-side option map from the last assistant message
+  // Choice mapping
   const serverOptionMap = extractNumberedOptionsFromHistory(history);
-
-  // Build feeds-grounded fallback map
   const feedOptionMap = buildOptionMap(inv, ctx);
-
-  // Expand numeric selection BEFORE arbiter: prefer server option map, then feed map, else keep raw
   const selectionKey = userMessageRaw.trim().charAt(0) as "1"|"2"|"3"|"4"|"5";
   const expandedMessage =
     isNumericSelection(userMessageRaw) && (serverOptionMap[selectionKey] || feedOptionMap[selectionKey])
       ? (serverOptionMap[selectionKey] || feedOptionMap[selectionKey])!
       : userMessageRaw;
 
-  // ---------- Arbiter call ----------
+  // Arbiter
   let arbiterDecision: ArbiterDecision | null = null;
   try {
     const arbiterPayload: any = {
-      message: expandedMessage,       // <— use expanded intent if a number was chosen
+      message: expandedMessage,
       sceneTags: ctx.tags,
       inventoryTags: inv.tags,
       learnedTags: lrn.tags,
-      character: {
-        name: char.name,
-        stance: char.stance,
-        stats: char.stats,
-        activeConditions: char.activeConditions,
-      },
+      character: { name: char.name, stance: char.stance, stats: char.stats, activeConditions: char.activeConditions },
     };
 
     arbiterDecision = await getRollDecision(arbiterPayload);
 
-    // NEW: normalize after arbiter classification, before any deltas or rolls
+    // Normalize (melee/throw) before any rolls/deltas
     arbiterDecision = normalizeArbiterDecision(arbiterDecision, inv, ctx, expandedMessage);
+
+    // OPTIONAL: on explicit draw, reflect equip in State via deltas (belt → main; else add@main)
+    try {
+      const intent = expandedMessage.toLowerCase();
+      const draws = /\bdraw\b.*\b(sword|longsword|blade)\b/.test(intent);
+      const mhSlug = inv.tags.find(t => t.startsWith("pc:hand:main:"))?.slice("pc:hand:main:".length);
+      const longTag = inv.tags.find(t => /^pc:item:.*longsword/.test(t));
+      const longSlug = longTag ? longTag.split(":")[2] : null;
+
+      if (draws && longSlug && mhSlug !== longSlug) {
+        const deltas: Delta[] = [
+          { type: "inventory", op: "move", item: longSlug, from: "belt", to: "main", qty: 1 } as Delta,
+        ];
+        // Try move first (belt → main); if it fails, add@main as fallback
+        const result = applyDeltas(deltas);
+        if (result.errors.length) {
+          applyDeltas([{ type: "inventory", op: "add", item: longSlug, where: "main", qty: 1, name: longSlug } as Delta]);
+        }
+      }
+    } catch {}
 
     if (arbiterDecision && (arbiterDecision as any).apply_now) {
       applyDeltas(((arbiterDecision as any).apply_now as Delta[]) || []);
     }
   } catch {
-    arbiterDecision = null; // never block the player flow if arbiter fails
+    arbiterDecision = null;
   }
 
-  // ---------- Roll Manager (mechanical roll only; narration unchanged) ----------
+  // Roll Manager
   let __rollLine = "";
   if (arbiterDecision && (arbiterDecision.kind === "fixed" || arbiterDecision.kind === "opposed")) {
     const out = resolveActionHit({
@@ -452,48 +444,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       sceneTags: ctx.tags,
       inventoryTags: inv.tags,
       learnedTags: lrn.tags,
-      seedParts: {
-        scenarioId: scenario.id,
-        turn: (Array.isArray(history) ? history.length : 0) + 1,
-        userHash: "anon",
-        extra: "hit",
-      },
+      seedParts: { scenarioId: scenario.id, turn: (Array.isArray(history) ? history.length : 0) + 1, userHash: "anon", extra: "hit" },
       debugRoll: !!debugRoll,
       defenderDefenseBonus: 2,
       attackerAbilityBonus: 0,
     });
-
-    if (debugRoll && out.handled && out.debugLine) {
-      __rollLine = out.debugLine;
-    }
+    if (debugRoll && out.handled && out.debugLine) __rollLine = out.debugLine;
   }
 
-  // ---- Build the system prompt (data + direction, no scripted lines) ----
+  // Prompt (with guard)
   const invItemsForNames = (inv as any)?.list?.items ?? [];
-  const currentKitNames: string[] = invItemsForNames
-    .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
-    .filter((s: string) => !!s);
+  const currentKitNames: string[] = invItemsForNames.map((it: any) => (typeof it?.name === "string" ? it.name.trim() : "")).filter(Boolean);
 
-  let SYSTEM_PROMPT = buildSystemPrompt(
-    scenario,
-    worldDoc,
-    encounterDoc,
-    conductorDoc,
-    systemDoc,
-    { kitNames: currentKitNames }
-  );
+  let SYSTEM_PROMPT = buildSystemPrompt(scenario, worldDoc, encounterDoc, conductorDoc, systemDoc, { kitNames: currentKitNames });
 
-  // --- Options Guard (feeds precedence) ---
   try {
-    const sceneItems: string[] = (ctx.tags || [])
-      .filter((t) => t.startsWith("env:item:"))
-      .map((t) => t.split(":")[2])
-      .filter(Boolean);
-
+    const sceneItems: string[] = (ctx.tags || []).filter(t => t.startsWith("env:item:")).map(t => t.split(":")[2]).filter(Boolean);
     const learnedItems = (lrn as any)?.list?.items ?? [];
-    const learnedNames: string[] = learnedItems
-      .map((it: any) => (typeof it?.name === "string" ? it.name.trim() : ""))
-      .filter((s: string) => !!s);
+    const learnedNames: string[] = learnedItems.map((it: any) => (typeof it?.name === "string" ? it.name.trim() : "")).filter(Boolean);
 
     const optionsGuard = `
 # OPTIONS GUARD (hidden; do not expose)
@@ -511,67 +479,34 @@ Rules:
 `.trim();
 
     SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${optionsGuard}`;
-  } catch {
-    // If anything goes wrong, skip guard — never block play
-  }
-
-  // Build a specific prohibition message for this turn if auto-fail with needs-*
-  const extraSystemGuards: Array<{ role: "system"; content: string }> = [];
-  if (arbiterDecision && arbiterDecision.kind === "auto-fail") {
-    const needs = (arbiterDecision.tags || [])
-      .filter(t => typeof t === "string" && t.startsWith("needs-"))
-      .map(t => t.slice("needs-".length).replace(/[-_]+/g, " ").trim())
-      .filter(Boolean);
-
-    if (needs.length) {
-      const guard = `
-# Scene Truths (strict for this turn; do not expose)
-- The following items/capabilities are **NOT present** this turn: ${needs.map(n => `"${n}"`).join(", ")}.
-- If the user asserts seeing any of them, treat it as misperception and reflect their absence in-world; prefer present alternatives where sensible.
-`.trim();
-      extraSystemGuards.push({ role: "system", content: guard });
-    }
-  }
+  } catch {}
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...extraSystemGuards,
     ...(Array.isArray(history) ? history.slice(-8) : []),
-    { role: "user", content: userMessageRaw }, // keep original as the visible user turn
+    { role: "user", content: userMessageRaw },
   ];
 
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: msgs,
-        temperature: 0.8,
-        max_tokens: 500,
-      }),
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: MODEL, messages: msgs, temperature: 0.8, max_tokens: 500 }),
     });
 
     const text = await r.text();
-    if (!r.ok) {
-      return res.status(500).json({ error: "OpenAI request failed", detail: text.slice(0, 800) });
-    }
+    if (!r.ok) return res.status(500).json({ error: "OpenAI request failed", detail: text.slice(0, 800) });
 
     const data = JSON.parse(text);
     let reply: string = data?.choices?.[0]?.message?.content?.trim() || "(no reply)";
 
-    // Promote narrator-mentioned items → env state (skip if already present)
+    // Observer → env deltas (dedup)
     let __observerLine = "";
     try {
       const envDeltas = await proposeEnvDeltas({ narration: reply, sceneTags: ctx.tags });
-
       if (Array.isArray(envDeltas) && envDeltas.length) {
         const env = getEnvironment();
         const existing = new Set(env.items.map((it: any) => `${it.slug}@${it.where}`));
-
         const filtered = envDeltas.filter((d: any) => {
           if (d.type !== "environment" || d.op !== "add") return true;
           const key = `${d.slug}@${d.where}`;
@@ -580,15 +515,14 @@ Rules:
 
         if (filtered.length) {
           applyDeltas(filtered as unknown as Delta[]);
-          const added = filtered
-            .filter((d: any) => d.type === "environment" && d.op === "add")
-            .map((d: any) => `${d.slug}@${d.where} x${d.qty ?? 1}`);
+          const added = filtered.filter((d: any) => d.type === "environment" && d.op === "add")
+                               .map((d: any) => `${d.slug}@${d.where} x${d.qty ?? 1}`);
           if (added.length) __observerLine = `[obs: added ${added.join(", ")}]`;
         }
       }
     } catch {}
 
-    // ---------- Debug output ----------
+    // Debug
     if (debug === true) {
       const preview = userMessageRaw.replace(/\s+/g, " ").slice(0, 140);
 
@@ -598,29 +532,11 @@ Rules:
           case "no-roll":
           case "auto-success":
           case "auto-fail":
-            return `${arbiterDecision.kind} (${arbiterDecision.reason})${
-              arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""
-            }`;
+            return `${arbiterDecision.kind} (${arbiterDecision.reason})${arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""}`;
           case "fixed":
-            return `fixed ability=${arbiterDecision.ability}${
-              arbiterDecision.dcHint ? ` dcHint=${arbiterDecision.dcHint}` : ""
-            }${
-              arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
-            }${
-              arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""
-            }${
-              arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""
-            }`;
+            return `fixed ability=${arbiterDecision.ability}${arbiterDecision.dcHint ? ` dcHint=${arbiterDecision.dcHint}` : ""}${arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""}${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}${arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""}`;
           case "opposed":
-            return `opposed atk=${arbiterDecision.attackerAbility} vs ${
-              arbiterDecision.defender
-            }${
-              arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""
-            }${
-              arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""
-            }${
-              arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""
-            }`;
+            return `opposed atk=${arbiterDecision.attackerAbility} vs ${arbiterDecision.defender}${arbiterDecision.context ? ` ctx="${arbiterDecision.context}"` : ""}${arbiterDecision.reason ? ` reason="${arbiterDecision.reason}"` : ""}${arbiterDecision.tags?.length ? ` tags=${JSON.stringify(arbiterDecision.tags)}` : ""}`;
           default:
             return "unknown";
         }
@@ -633,13 +549,10 @@ Rules:
         feedLine = `\n[feeds: ${feedTags} | stance=${char.stance} cond=${cond}]`;
       }
 
-      const arbLine = `[arb: input="${preview}" | ${decisionStr}]`;
       const observerBlock = __observerLine ? `\n${__observerLine}` : "";
-
-      reply = `${arbLine}${feedLine}${observerBlock}\n\n${reply}`;
+      reply = `[arb: input="${preview}" | ${decisionStr}]${feedLine}${observerBlock}\n\n${reply}`;
     }
 
-    // Rolls debug — only when `debugRoll` is true
     if (debugRoll === true && __rollLine) {
       reply = `${__rollLine}\n${reply}`;
     }
