@@ -43,6 +43,8 @@ export type RollDebug = {
   modsAttack: Array<{ source: string; value: number | "adv" | "dis" }>;
   modsDefense?: Array<{ source: string; value: number | "adv" | "dis" }>;
   target: string; total: number; margin: number;
+  abilityBonus?: number;
+  modsAttackTotal?: number;
 };
 
 export type RollResult = {
@@ -126,6 +128,10 @@ export function resolveHit(ctx: RollContext): RollResult {
   const margin = totalAttack - target;
   const tier = tierFrom(r.used, margin);
 
+  // For a robust breakdown, compute modsAttackTotal from the actual numbers used.
+  // This guarantees: used + abilityBonus + modsAttackTotal === totalAttack
+  const modsAttackTotal = totalAttack - r.used - abilityBonus;
+
   const debug: RollDebug | undefined = ctx.debugRoll ? {
     d20: r.d20, second: r.second, used: r.used,
     mode: rollMode,
@@ -134,7 +140,9 @@ export function resolveHit(ctx: RollContext): RollResult {
     modsDefense: undefined,
     target: targetLabel,
     total: totalAttack,
-    margin
+    margin,
+    abilityBonus,
+    modsAttackTotal
   } : undefined;
 
   return {

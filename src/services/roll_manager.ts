@@ -54,6 +54,8 @@ export type ResolveActionHitOutput = {
       modsAttack: Array<{source:string; value:number|"adv"|"dis"}>;
       modsDefense?: Array<{source:string; value:number|"adv"|"dis"}>;
       target: string; total: number; margin: number;
+      abilityBonus?: number;
+      modsAttackTotal?: number;
     };
   };
   // single compact line for [roll: …] if debugRoll=true
@@ -69,6 +71,8 @@ type RollDebug = {
   target: string;
   total: number;
   margin: number;
+  abilityBonus?: number;
+  modsAttackTotal?: number;
 };
 
 // --- small helper to format the one-line debug ---
@@ -85,7 +89,8 @@ function formatRollDebugLabel(decision: ArbiterDecision): string {
 
 function formatRollDebugLine(label: string, dbg: RollDebug): string {
   const parts: string[] = [];
-  parts.push(label);
+  // Make this unmistakably a hit-success debug line
+  parts.push(`HIT: ${label}`);
 
   parts.push(`d20=${dbg.used}`);
   if (typeof dbg.second === "number") parts.push(`(a=${dbg.d20}, b=${dbg.second})`);
@@ -109,7 +114,12 @@ function formatRollDebugLine(label: string, dbg: RollDebug): string {
     dbg.margin >= 0 ? "success" :
     dbg.margin >= -4 ? "mixed" : "fail";
 
-  return `[roll: ${parts.join(" ")} → ${tierStr}]`;
+  const line = `[roll: ${parts.join(" ")} → ${tierStr}]`;
+  // Optional arithmetic breakdown (balanced with total)
+  const abi = typeof dbg.abilityBonus === "number" ? dbg.abilityBonus : 0;
+  const mods = typeof dbg.modsAttackTotal === "number" ? dbg.modsAttackTotal : 0;
+  const breakdown = `breakdown: ${dbg.used} + ability(${abi}) + mods(${mods}) = ${dbg.total}`;
+  return `${line}\n  ${breakdown}`;
 }
 
 // --- the manager itself ---
