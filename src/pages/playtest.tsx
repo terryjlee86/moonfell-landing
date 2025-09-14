@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import RosterSidebar from "../ui/roster/RosterSidebar";
+import { getRosterSnapshot } from "../state/selectors/roster_selector";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -16,11 +18,19 @@ export default function Playtest() {
   const [debugRoll, setDebugRoll] = useState(false);   // Rolls math banner
   const [debugFeeds, setDebugFeeds] = useState(false); // NEW: feeds tag wall on/off
 
+  // Roster UI state (local-only)
+  const [openRoster, setOpenRoster] = useState(true);
+  const [hostilesOnly, setHostilesOnly] = useState(false);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+
   const viewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     viewRef.current?.scrollTo({ top: viewRef.current.scrollHeight, behavior: "smooth" });
   }, [history, intro]);
+
+  // Pull a snapshot for the roster UI (re-computed on render; inexpensive)
+  const { entries } = getRosterSnapshot();
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
@@ -113,6 +123,7 @@ export default function Playtest() {
           debug,                 // Arbiter/Observer
           debugRoll,             // Rolls
           debugFeeds,            // NEW: feeds tag wall
+          // (Optional future) targetId: selectedTargetId ?? undefined
         }),
       });
       const j = await r.json();
@@ -140,11 +151,33 @@ export default function Playtest() {
   return (
     <main style={styles.main}>
       <section style={styles.card}>
-        <header>
-          <h1 style={{ margin: 0 }}>Moonfell Playtest (Preview)</h1>
-          <p style={{ marginTop: 6, color: "#444" }}>
-            Text-only, rules-driven preview. Actions can be anything you can describe. Boundaries are tight for this demo.
-          </p>
+        <header style={styles.headerRow}>
+          <div>
+            <h1 style={{ margin: 0 }}>Moonfell Playtest (Preview)</h1>
+            <p style={{ marginTop: 6, color: "#444" }}>
+              Text-only, rules-driven preview. Actions can be anything you can describe. Boundaries are tight for this demo.
+            </p>
+          </div>
+          {/* Roster toggle lives in the header for quick access */}
+          {authed && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                style={styles.ghostBtn}
+                onClick={() => setOpenRoster((v) => !v)}
+                title="Toggle roster sidebar"
+              >
+                {openRoster ? "Hide Roster" : "Show Roster"}
+              </button>
+              <label style={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={hostilesOnly}
+                  onChange={(e) => setHostilesOnly(e.target.checked)}
+                />
+                Hostiles only
+              </label>
+            </div>
+          )}
         </header>
 
         {!authed ? (
@@ -244,6 +277,20 @@ export default function Playtest() {
           </div>
         )}
       </section>
+
+      {/* Roster sidebar — fixed-position; safe to mount at root */}
+      {authed && (
+        <RosterSidebar
+          entries={entries}
+          open={openRoster}
+          onToggle={() => setOpenRoster((v) => !v)}
+          hostilesOnly={hostilesOnly}
+          onToggleHostiles={setHostilesOnly}
+          selectedTargetId={selectedTargetId}
+          onSelectTarget={setSelectedTargetId}
+          isActionTargeting={false}
+        />
+      )}
     </main>
   );
 }
@@ -266,6 +313,12 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
     display: "flex",
     flexDirection: "column",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    gap: 12,
   },
   viewport: {
     border: "1px solid #eee",
@@ -309,5 +362,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: "white",
     cursor: "pointer",
     fontSize: 18,
+  },
+  ghostBtn: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid #cfd3db",
+    background: "#fff",
+    color: "#111827",
+    cursor: "pointer",
+    fontSize: 14,
   },
 };
