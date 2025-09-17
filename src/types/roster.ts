@@ -17,6 +17,7 @@ export type RosterEntry = {
   distanceM: number;         // rounded metres from player POV
   cover: Cover | null;       // null if not applicable/unknown
   status: string[];          // e.g., ["blinded","prone"]
+  isKnown: boolean;          // whether the player knows this NPC
 
   // Optional hints for future panels (do not rely on these in MVP):
   blocking?: boolean;        // whether currently obstructing movement/line
