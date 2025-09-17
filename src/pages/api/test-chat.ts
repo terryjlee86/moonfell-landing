@@ -10,6 +10,7 @@ import { characterFeed } from "../../feeds/character_feed";
 import { inventoryFeed } from "../../feeds/inventory_feed";
 import { contextFeed } from "../../feeds/context_feed";
 import { getContext } from "../../state/context";
+import { runEncounterCycle } from "../../encounters/orchestrator";
 import { learnedFeed } from "../../feeds/learned_feed";
 
 // Delta applier (applies Rolls DM apply_now / outcome deltas) — MUTATES state
@@ -379,6 +380,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const userMessageRaw = (message || "").trim();
   if (!userMessageRaw) return res.status(400).json({ error: "No message provided" });
 
+  // Run encounter orchestrator BEFORE building feeds so SSOT reflects any spawns this turn
+  try { await runEncounterCycle(); } catch {}
+
   // Feeds
   const char = characterFeed();
   const inv  = inventoryFeed();
@@ -463,6 +467,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const sceneItems: string[] = (ctx.tags || []).filter(t => t.startsWith("env:item:")).map(t => t.split(":")[2]).filter(Boolean);
     const learnedItems = (lrn as any)?.list?.items ?? [];
     const learnedNames: string[] = learnedItems.map((it: any) => (typeof it?.name === "string" ? it.name.trim() : "")).filter(Boolean);
+    const creatureSummaries: string[] = (ctx.tags || [])
+      .filter(t => t.startsWith("creature:"))
+      .map(t => t.split(":").slice(1).join(":"))
+      .filter(Boolean);
 
     const optionsGuard = `
 # OPTIONS GUARD (hidden; do not expose)
@@ -479,7 +487,16 @@ Rules:
 - Prefer distinct shapes (attack / defend / move / throw / speak / use-scene), within scenario boundaries.
 `.trim();
 
-    SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${optionsGuard}`;
+    const creaturesGuard = `
+# CREATURES/ACTORS GUARD (hidden; do not expose)
+- Only describe creatures/humanoids that exist in FEEDS right now.
+- Do NOT introduce new entities, factions, or reinforcements unless FEEDS include them.
+- If none are present, avoid implying visible creatures; suggest non-combat actions instead.
+- If the player tries to "spawn" or "attract" foes, acknowledge intent but reflect current FEEDS.
+- Nearby (from FEEDS): ${creatureSummaries.length ? creatureSummaries.join("; ") : "none"}
+`.trim();
+
+    SYSTEM_PROMPT = `${SYSTEM_PROMPT}\n\n${optionsGuard}\n\n${creaturesGuard}`;
   } catch {}
 
   const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [

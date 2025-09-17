@@ -1,0 +1,7 @@
+---
+description: |
+  Always use infra guidance from infra-docs. Quote relevant lines when planning features.
+globs:
+  - "/Volumes/dev/infra-docs/**"
+alwaysApply: true
+---

@@ -1,0 +1,11 @@
+---
+description: |
+  When planning features for Moonfell:
+  - Always check docs/lore/*.md and docs/adrs/*.md.
+  - Quote relevant lines before proposing changes.
+  - If a plan contradicts existing lore or ADRs, flag it clearly.
+  - Propose diffs to update lore/ADRs separately, but do not apply without approval.
+globs:
+  - "moonfell-landing/**"
+alwaysApply: true
+---
