@@ -22,7 +22,7 @@ export async function runScenarioEncounterCycle(): Promise<void> {
       id: "mirefold_1",
       name: "Mirefold",
       kind: "mirefold",
-      attitude: "enemy",
+      attitude: "hostile",
       distanceM: 10,
       cover: "none",
       status: [],
