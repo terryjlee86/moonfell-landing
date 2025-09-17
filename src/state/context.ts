@@ -1,8 +1,11 @@
 export type Nearby = {
   id: string;
   kind: string; // "goblin", "mirefold", etc.
-  attitude: "hostile" | "wary" | "curious" | "ally";
+  name?: string;
+  attitude: "hostile" | "wary" | "curious" | "ally" | "neutral" | "friendly";
   distanceM: number;
+  cover?: string | null;
+  status?: string[];
 };
 
 export type ObservedItem = { slug: string; kind?: "improv" | "loot" | "scenery" };
@@ -29,6 +32,12 @@ export function upsertNearby(n: Nearby) {
 export function removeNearby(id: string) {
   _ctx.nearby = _ctx.nearby.filter(n => n.id !== id);
 }
+
+// Replace entire nearby list (source of truth comes from server per turn)
+export function setNearby(list: Nearby[]) {
+  _ctx.nearby = Array.isArray(list) ? list.slice() : [];
+}
+export function clearNearby() { _ctx.nearby = []; }
 
 // NEW — add/remove observed items (e.g., "rock")
 export function observeItem(slug: string, kind: ObservedItem["kind"] = "improv") {

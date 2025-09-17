@@ -9,6 +9,7 @@ import { getRollDecision, ArbiterDecision } from "../../services/rolls_dm";
 import { characterFeed } from "../../feeds/character_feed";
 import { inventoryFeed } from "../../feeds/inventory_feed";
 import { contextFeed } from "../../feeds/context_feed";
+import { getContext } from "../../state/context";
 import { learnedFeed } from "../../feeds/learned_feed";
 
 // Delta applier (applies Rolls DM apply_now / outcome deltas) — MUTATES state
@@ -557,7 +558,10 @@ Rules:
       reply = `${__rollLine}\n${reply}`;
     }
 
-    return res.status(200).json({ reply, scenario: scenario.id });
+    // Thread through a basic nearby list from state context so the client can render roster
+    const ctxNow = getContext();
+    const nearby = Array.isArray(ctxNow?.nearby) ? ctxNow.nearby : [];
+    return res.status(200).json({ reply, scenario: scenario.id, nearby });
   } catch (e: any) {
     return res.status(500).json({ error: "Unexpected error", detail: String(e) });
   }

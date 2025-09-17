@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import RosterSidebar from "../ui/roster/RosterSidebar";
 import { getRosterSnapshot } from "../state/selectors/roster_selector";
+import { setNearby } from "../state/context";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -90,6 +91,7 @@ export default function Playtest() {
       }
       setIntro(j.intro || "Welcome to the Moonfell preview.");
       setAuthed(true);
+      if (Array.isArray(j?.nearby)) setNearby(j.nearby);
     } catch (e: any) {
       setErr("Network error.");
     } finally {
@@ -123,7 +125,7 @@ export default function Playtest() {
           debug,                 // Arbiter/Observer
           debugRoll,             // Rolls
           debugFeeds,            // NEW: feeds tag wall
-          // (Optional future) targetId: selectedTargetId ?? undefined
+          targetId: selectedTargetId ?? undefined
         }),
       });
       const j = await r.json();
@@ -133,6 +135,7 @@ export default function Playtest() {
         return;
       }
       const reply: string = j.reply || "(no reply)";
+      if (Array.isArray(j?.nearby)) setNearby(j.nearby);
 
       // Optional: separate debug messages if backend ever returns them
       const debugMessages: Turn[] = Array.isArray(j.debugMessages) ? j.debugMessages : [];
