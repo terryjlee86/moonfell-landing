@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import RosterSidebar from "../ui/roster/RosterSidebar";
 import { getRosterSnapshot } from "../state/selectors/roster_selector";
 import { setNearby } from "../state/context";
+import { rollInitiative } from "../services/initiative_service";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -32,6 +33,9 @@ export default function Playtest() {
 
   // Pull a snapshot for the roster UI (re-computed on render; inexpensive)
   const { entries } = getRosterSnapshot();
+
+  // Prepare sorted entries using the initiative service
+  const sortedEntries = rollInitiative(entries);
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
@@ -284,7 +288,7 @@ export default function Playtest() {
       {/* Roster sidebar — fixed-position; safe to mount at root */}
       {authed && (
         <RosterSidebar
-          entries={entries}
+          sortedEntries={sortedEntries}
           open={openRoster}
           onToggle={() => setOpenRoster((v) => !v)}
           hostilesOnly={hostilesOnly}
