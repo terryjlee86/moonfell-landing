@@ -1,5 +1,6 @@
 import { getGameplay, setGameplay } from "../../state/gameplay";
 import { getContext, setNearby } from "../../state/context";
+import { CREATURE_SPECIES } from "../../catalog/creature_species"; // Import the creature database
 
 /**
  * DEBUG ONLY (to be replaced by real encounter pipeline):
@@ -17,17 +18,23 @@ export async function runScenarioEncounterCycle(): Promise<void> {
     return;
   }
 
-  setNearby([
-    {
-      id: "mirefold_1",
-      name: "Mirefold",
-      kind: "mirefold",
-      attitude: "hostile",
-      distanceM: 10,
-      cover: "none",
-      status: [],
-    },
-  ]);
+  // Fetch the mirefold from the creature database
+  const mirefold = CREATURE_SPECIES.find(creature => creature.id === "mirefold");
+
+  if (mirefold) {
+    setNearby([
+      {
+        id: "mirefold_1",
+        name: mirefold.name,
+        kind: mirefold.id,
+        attitude: "hostile",
+        distanceM: 10,
+        cover: "none",
+        status: [],
+        // You can add more attributes here if needed
+      },
+    ]);
+  }
 
   setGameplay({ debug: { scenarioSpawnedOnce: true } });
 }

@@ -34,5 +34,21 @@ export const CREATURE_SPECIES: CreatureSpecies[] = [
     biomes:["road","ruins","forest"], activity:"any",
     wild:false, packHunter:true, communal:false, solitary:false, socialCohort:"dogs"
   },
+  {
+    id: "mirefold",
+    name: "Mirefold",
+    size: "medium",
+    baseStats: { STR: 3, AGI: 3, END: 3, INT: 1, WIL: 2, CHA: 1 },
+    proficiencies: { melee: 1, perception: 1 },
+    traits: ["amphibious", "camouflage"],
+    naturalAttacks: ["claw:light:slashing"],
+    biomes: ["forest", "marsh"],
+    activity: "any",
+    wild: true,
+    packHunter: false,
+    communal: false,
+    solitary: true,
+    socialCohort: "mirefolds"
+  },
   // add more creatures…
 ];
