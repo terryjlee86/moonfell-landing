@@ -3,6 +3,8 @@ import RosterSidebar from "../ui/roster/RosterSidebar";
 import { getRosterSnapshot } from "../state/selectors/roster_selector";
 import { setNearby } from "../state/context";
 import { rollInitiative } from "../services/initiative_service";
+import { EntitySpawn } from "../encounters/types";
+import { Attitude } from "../types/roster";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -34,9 +36,9 @@ export default function Playtest() {
   // Pull a snapshot for the roster UI (re-computed on render; inexpensive)
   const { entries } = getRosterSnapshot();
 
-  // Convert RosterEntry objects to EntitySpawn objects
-  const entitySpawns = entries.map(entry => ({
-    kind: entry.kind === "humanoid" ? "humanoid" : "creature", // Explicitly set kind
+  // Correct conversion logic
+  const entitySpawns: EntitySpawn[] = entries.map(entry => ({
+    kind: "humanoid", // Assuming all entries are humanoid for simplicity
     raceId: entry.kind, // Assuming kind can be used as raceId
     roleId: "default-role", // Placeholder roleId
     level: 1, // Default level
@@ -45,7 +47,35 @@ export default function Playtest() {
   }));
 
   // Prepare sorted entries using the initiative service
-  const sortedEntries = rollInitiative(entitySpawns);
+  const sortedEntries = rollInitiative(entitySpawns).map(({ actor, roll }) => {
+    if (actor.kind === "humanoid") {
+      return {
+        actor: {
+          id: actor.raceId, // Placeholder for id
+          name: actor.raceId, // Placeholder for name
+          kind: actor.raceId, // Placeholder for kind
+          attitude: actor.faction === "hostile" ? "enemy" as Attitude : "neutral" as Attitude, // Convert faction to attitude
+          distanceM: 0, // Placeholder for distance
+          cover: null, // Placeholder for cover
+          status: [], // Placeholder for statusone last time
+        },
+        roll,
+      };
+    } else {
+      return {
+        actor: {
+          id: actor.speciesId, // Placeholder for id
+          name: actor.speciesId, // Placeholder for name
+          kind: actor.speciesId, // Placeholder for kind
+          attitude: "neutral" as Attitude, // Default attitude
+          distanceM: 0, // Placeholder for distance
+          cover: null, // Placeholder for cover
+          status: [], // Placeholder for status
+        },
+        roll,
+      };
+    }
+  });
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
