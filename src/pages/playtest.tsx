@@ -36,7 +36,7 @@ export default function Playtest() {
 
   // Convert RosterEntry objects to EntitySpawn objects
   const entitySpawns = entries.map(entry => ({
-    kind: entry.kind === "humanoid" ? "humanoid" : "creature",
+    kind: entry.kind === "humanoid" ? "humanoid" : "creature", // Explicitly set kind
     raceId: entry.kind, // Assuming kind can be used as raceId
     roleId: "default-role", // Placeholder roleId
     level: 1, // Default level
