@@ -90,7 +90,7 @@ function formatRollDebugLabel(decision: ArbiterDecision): string {
 function formatRollDebugLine(label: string, dbg: RollDebug): string {
   const parts: string[] = [];
   // Make this unmistakably a hit-success debug line
-  parts.push(`HIT: ${label}`);
+  parts.push(`Success Roll: ${label}`);
 
   parts.push(`d20=${dbg.used}`);
   if (typeof dbg.second === "number") parts.push(`(a=${dbg.d20}, b=${dbg.second})`);
