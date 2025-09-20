@@ -34,8 +34,18 @@ export default function Playtest() {
   // Pull a snapshot for the roster UI (re-computed on render; inexpensive)
   const { entries } = getRosterSnapshot();
 
+  // Convert RosterEntry objects to EntitySpawn objects
+  const entitySpawns = entries.map(entry => ({
+    kind: entry.kind === "humanoid" ? "humanoid" : "creature",
+    raceId: entry.kind, // Assuming kind can be used as raceId
+    roleId: "default-role", // Placeholder roleId
+    level: 1, // Default level
+    count: 1, // Default count
+    faction: entry.attitude === "enemy" ? "hostile" : "neutral", // Determine faction based on attitude
+  }));
+
   // Prepare sorted entries using the initiative service
-  const sortedEntries = rollInitiative(entries);
+  const sortedEntries = rollInitiative(entitySpawns);
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
