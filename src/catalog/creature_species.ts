@@ -9,7 +9,7 @@ import { CreatureSpecies } from "./types";
 export const CREATURE_SPECIES: CreatureSpecies[] = [
   {
     id:"wolf", name:"Wolf", size:"medium",
-    baseStats:{STR:3,AGI:4,END:3,INT:1,WIL:2,CHA:1},
+    baseStats:{STR:12,AGI:14,END:12,INT:8,WIL:10,CHA:8},
     proficiencies:{melee:2,perception:1,stealth:1},
     traits:["pack-tactics"],
     naturalAttacks:["bite:light:piercing"],
@@ -18,7 +18,7 @@ export const CREATURE_SPECIES: CreatureSpecies[] = [
   },
   {
     id:"boar", name:"Boar", size:"medium",
-    baseStats:{STR:4,AGI:2,END:4,INT:1,WIL:2,CHA:1},
+    baseStats:{STR:16,AGI:10,END:16,INT:8,WIL:10,CHA:8},
     proficiencies:{melee:2,perception:1},
     traits:["thick-hide"],
     naturalAttacks:["gore:medium:piercing"],
@@ -27,7 +27,7 @@ export const CREATURE_SPECIES: CreatureSpecies[] = [
   },
   {
     id:"guard-dog", name:"Guard Dog", size:"medium",
-    baseStats:{STR:3,AGI:3,END:3,INT:1,WIL:2,CHA:1},
+    baseStats:{STR:12,AGI:12,END:12,INT:8,WIL:10,CHA:8},
     proficiencies:{melee:2,perception:1},
     traits:["loyal"],
     naturalAttacks:["bite:light:piercing"],
@@ -38,7 +38,7 @@ export const CREATURE_SPECIES: CreatureSpecies[] = [
     id: "mirefold",
     name: "Mirefold",
     size: "medium",
-    baseStats: { STR: 3, AGI: 3, END: 3, INT: 1, WIL: 2, CHA: 1 },
+    baseStats: { STR: 12, AGI: 12, END: 12, INT: 8, WIL: 10, CHA: 8 },
     proficiencies: { melee: 1, perception: 1 },
     traits: ["amphibious", "camouflage"],
     naturalAttacks: ["claw:light:slashing"],

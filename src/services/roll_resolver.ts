@@ -115,12 +115,12 @@ export function resolveHit(ctx: RollContext): RollResult {
   // Attack total
   const totalAttack = r.used + abilityBonus + atkMods.bonus + gripAttackAdj;
 
-  // Target: fixed DC or simple defense baseline (until creature stats exist)
-  let target = ctx.armorClass ?? 10; // Default to 10 if not provided
+  // Target: fixed DC or AC-based defense
+  let target = ctx.armorClass ?? 9; // Default to 9 if not provided
   let targetLabel = `AC ${target}`;
   if (ctx.opposed) {
-    target = 10 + (ctx.defenderDefenseBonus ?? 2) + defMods.bonus; // defMods.bonus = 0 for now
-    targetLabel = `defense ${target}`;
+    target = ctx.armorClass ?? 9; // Use the calculated AC, default to 9
+    targetLabel = `AC ${target}`;
   } else {
     target = dcFromHint(ctx.dcHint);
     targetLabel = `DC ${target}`;
