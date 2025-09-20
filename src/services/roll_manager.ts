@@ -40,6 +40,7 @@ export type ResolveActionHitInput = {
   // simple baselines (tunable later)
   defenderDefenseBonus?: number; // default 2
   attackerAbilityBonus?: number; // default 0 (you can later compute from stats if desired)
+  armorClass?: number; // New property for AC
 };
 
 export type ResolveActionHitOutput = {

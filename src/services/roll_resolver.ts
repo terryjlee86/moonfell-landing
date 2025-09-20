@@ -35,6 +35,7 @@ export type RollContext = {
   opposed?: boolean;               // true -> opposed vs defense; false -> fixed DC
   defenderDefenseBonus?: number;   // simple baseline for creature defense (e.g., 2)
   dcHint?: "easy" | "standard" | "hard" | "heroic"; // for fixed DC
+  armorClass?: number; // Added for AC target
 };
 
 export type RollDebug = {
@@ -115,8 +116,8 @@ export function resolveHit(ctx: RollContext): RollResult {
   const totalAttack = r.used + abilityBonus + atkMods.bonus + gripAttackAdj;
 
   // Target: fixed DC or simple defense baseline (until creature stats exist)
-  let target = 0;
-  let targetLabel = "";
+  let target = ctx.armorClass ?? 10; // Default to 10 if not provided
+  let targetLabel = `AC ${target}`;
   if (ctx.opposed) {
     target = 10 + (ctx.defenderDefenseBonus ?? 2) + defMods.bonus; // defMods.bonus = 0 for now
     targetLabel = `defense ${target}`;

@@ -24,7 +24,7 @@ export type EntitySpawn =
   | { kind:"humanoid"; raceId:string; roleId:string; level:number; count:number; faction?:string; tags?:string[] };
 
 export interface DerivedTargets {
-  melee:number; ranged:number; perception:number; morale:number;
+  melee:number; ranged:number; perception:number; morale:number; armorClass: number;
 }
 
 export interface EncounterBlueprint {
