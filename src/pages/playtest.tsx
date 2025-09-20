@@ -28,6 +28,11 @@ export default function Playtest() {
   const [hostilesOnly, setHostilesOnly] = useState(false);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
 
+  // Combat/initiative local state
+  const [inCombat, setInCombat] = useState(false);
+  const [initiativeEntries, setInitiativeEntries] = useState<{ actor: RosterEntry; roll: number }[]>([]);
+  const prevHasEnemiesRef = useRef<boolean>(false);
+
   const viewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,60 +61,63 @@ export default function Playtest() {
     return entries.some(entry => entry.attitude === 'enemy');
   }
 
-  // Check for enemies and roll for initiative if entering combat mode
-  let sortedEntries = [];
-  if (hasEnemies(allEntries)) {
-    // Convert RosterEntry objects to EntitySpawn objects
-    const entitySpawns: EntitySpawn[] = allEntries.map(entry => ({
-      kind: "humanoid", // Assuming all entries are humanoid for simplicity
-      raceId: entry.kind, // Assuming kind can be used as raceId
-      roleId: "default-role", // Placeholder roleId
-      level: 1, // Default level
-      count: 1, // Default count
-      faction: entry.attitude === "enemy" ? "hostile" : "neutral", // Determine faction based on attitude
-    }));
+  // Keep non-combat roster order in sync
+  useEffect(() => {
+    if (!inCombat) {
+      setInitiativeEntries(allEntries.map(entry => ({ actor: entry, roll: 0 })));
+    }
+  }, [allEntries, inCombat]);
 
-    // Prepare sorted entries using the initiative service
-    sortedEntries = rollInitiative(entitySpawns).map(({ actor, roll }) => {
-      if (actor.kind === "humanoid") {
+  // Enter combat when first enemy appears; roll initiative once and emit a single debug line
+  useEffect(() => {
+    const prev = prevHasEnemiesRef.current;
+    const now = hasEnemies(allEntries);
+    if (!prev && now) {
+      const entitySpawns: EntitySpawn[] = allEntries.map(entry => ({
+        kind: "humanoid",
+        raceId: entry.kind,
+        roleId: "default-role",
+        level: 1,
+        count: 1,
+        faction: entry.attitude === "enemy" ? "hostile" : "neutral",
+      }));
+      const rolled = rollInitiative(entitySpawns).map(({ actor, roll }) => {
+        if (actor.kind === "humanoid") {
+          return {
+            actor: {
+              id: actor.raceId,
+              name: actor.raceId,
+              kind: actor.raceId,
+              attitude: (actor.faction === "hostile" ? "enemy" : "neutral") as Attitude,
+              distanceM: 0,
+              cover: null,
+              status: [],
+            },
+            roll,
+          } as { actor: RosterEntry; roll: number };
+        }
         return {
           actor: {
-            id: actor.raceId, // Placeholder for id
-            name: actor.raceId, // Placeholder for name
-            kind: actor.raceId, // Placeholder for kind
-            attitude: actor.faction === "hostile" ? "enemy" as Attitude : "neutral" as Attitude, // Convert faction to attitude
-            distanceM: 0, // Placeholder for distance
-            cover: null, // Placeholder for cover
-            status: [], // Placeholder for status
+            id: actor.speciesId,
+            name: actor.speciesId,
+            kind: actor.speciesId,
+            attitude: "neutral" as Attitude,
+            distanceM: 0,
+            cover: null,
+            status: [],
           },
           roll,
-        };
-      } else {
-        return {
-          actor: {
-            id: actor.speciesId, // Placeholder for id
-            name: actor.speciesId, // Placeholder for name
-            kind: actor.speciesId, // Placeholder for kind
-            attitude: "neutral" as Attitude, // Default attitude
-            distanceM: 0, // Placeholder for distance
-            cover: null, // Placeholder for cover
-            status: [], // Placeholder for status
-          },
-          roll,
-        };
+        } as { actor: RosterEntry; roll: number };
+      });
+      setInitiativeEntries(rolled);
+      setInCombat(true);
+      if (debugRoll || debug) {
+        const initiativeResults = rolled.map(({ actor, roll }) => `${actor.name} = ${roll}`).join(", ");
+        setHistory(h => [...h, { role: "assistant", content: `Initiative rolls: ${initiativeResults}` }]);
       }
-    });
-  } else {
-    // If no enemies, use the default order
-    sortedEntries = allEntries.map(entry => ({ actor: entry, roll: 0 }));
-  }
-
-  // Format and display initiative roll outcomes
-  if (hasEnemies(allEntries)) {
-    const initiativeResults = sortedEntries.map(({ actor, roll }) => `${actor.name} = ${roll}`).join(', ');
-    const debugMessage: Turn = { role: "assistant", content: `Initiative rolls: ${initiativeResults}` };
-    setHistory((h) => [...h, debugMessage]);
-  }
+    }
+    prevHasEnemiesRef.current = now;
+  }, [allEntries, debugRoll, debug]);
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
@@ -362,7 +370,7 @@ export default function Playtest() {
       {/* Roster sidebar — fixed-position; safe to mount at root */}
       {authed && (
         <RosterSidebar
-          sortedEntries={sortedEntries}
+          sortedEntries={initiativeEntries}
           open={openRoster}
           onToggle={() => setOpenRoster((v) => !v)}
           hostilesOnly={hostilesOnly}
