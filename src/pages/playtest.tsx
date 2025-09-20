@@ -51,46 +51,58 @@ export default function Playtest() {
   // Add player entry to the entries list if not already present
   const allEntries = entries.some(e => e.id === playerEntry.id) ? entries : [playerEntry, ...entries];
 
-  // Convert RosterEntry objects to EntitySpawn objects
-  const entitySpawns: EntitySpawn[] = allEntries.map(entry => ({
-    kind: "humanoid", // Assuming all entries are humanoid for simplicity
-    raceId: entry.kind, // Assuming kind can be used as raceId
-    roleId: "default-role", // Placeholder roleId
-    level: 1, // Default level
-    count: 1, // Default count
-    faction: entry.attitude === "enemy" ? "hostile" : "neutral", // Determine faction based on attitude
-  }));
+  // Function to check if there are any enemies in the entries
+  function hasEnemies(entries: RosterEntry[]): boolean {
+    return entries.some(entry => entry.attitude === 'enemy');
+  }
 
-  // Prepare sorted entries using the initiative service
-  const sortedEntries = rollInitiative(entitySpawns).map(({ actor, roll }) => {
-    if (actor.kind === "humanoid") {
-      return {
-        actor: {
-          id: actor.raceId, // Placeholder for id
-          name: actor.raceId, // Placeholder for name
-          kind: actor.raceId, // Placeholder for kind
-          attitude: actor.faction === "hostile" ? "enemy" as Attitude : "neutral" as Attitude, // Convert faction to attitude
-          distanceM: 0, // Placeholder for distance
-          cover: null, // Placeholder for cover
-          status: [], // Placeholder for statusone last time
-        },
-        roll,
-      };
-    } else {
-      return {
-        actor: {
-          id: actor.speciesId, // Placeholder for id
-          name: actor.speciesId, // Placeholder for name
-          kind: actor.speciesId, // Placeholder for kind
-          attitude: "neutral" as Attitude, // Default attitude
-          distanceM: 0, // Placeholder for distance
-          cover: null, // Placeholder for cover
-          status: [], // Placeholder for status
-        },
-        roll,
-      };
-    }
-  });
+  // Check for enemies and roll for initiative if entering combat mode
+  let sortedEntries = [];
+  if (hasEnemies(allEntries)) {
+    // Convert RosterEntry objects to EntitySpawn objects
+    const entitySpawns: EntitySpawn[] = allEntries.map(entry => ({
+      kind: "humanoid", // Assuming all entries are humanoid for simplicity
+      raceId: entry.kind, // Assuming kind can be used as raceId
+      roleId: "default-role", // Placeholder roleId
+      level: 1, // Default level
+      count: 1, // Default count
+      faction: entry.attitude === "enemy" ? "hostile" : "neutral", // Determine faction based on attitude
+    }));
+
+    // Prepare sorted entries using the initiative service
+    sortedEntries = rollInitiative(entitySpawns).map(({ actor, roll }) => {
+      if (actor.kind === "humanoid") {
+        return {
+          actor: {
+            id: actor.raceId, // Placeholder for id
+            name: actor.raceId, // Placeholder for name
+            kind: actor.raceId, // Placeholder for kind
+            attitude: actor.faction === "hostile" ? "enemy" as Attitude : "neutral" as Attitude, // Convert faction to attitude
+            distanceM: 0, // Placeholder for distance
+            cover: null, // Placeholder for cover
+            status: [], // Placeholder for status
+          },
+          roll,
+        };
+      } else {
+        return {
+          actor: {
+            id: actor.speciesId, // Placeholder for id
+            name: actor.speciesId, // Placeholder for name
+            kind: actor.speciesId, // Placeholder for kind
+            attitude: "neutral" as Attitude, // Default attitude
+            distanceM: 0, // Placeholder for distance
+            cover: null, // Placeholder for cover
+            status: [], // Placeholder for status
+          },
+          roll,
+        };
+      }
+    });
+  } else {
+    // If no enemies, use the default order
+    sortedEntries = allEntries.map(entry => ({ actor: entry, roll: 0 }));
+  }
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
