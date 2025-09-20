@@ -13,13 +13,13 @@ export type ObservedItem = { slug: string; kind?: "improv" | "loot" | "scenery" 
 export type ContextState = {
   rails?: string[];
   nearby: Nearby[];
-  observed?: ObservedItem[]; // <— NEW
+  observed?: ObservedItem[];
 };
 
 let _ctx: ContextState = {
   rails: ["demo-area-only"],
   nearby: [],
-  observed: [], // <— NEW
+  observed: [],
 };
 
 export function getContext(): ContextState { return _ctx; }
@@ -33,13 +33,11 @@ export function removeNearby(id: string) {
   _ctx.nearby = _ctx.nearby.filter(n => n.id !== id);
 }
 
-// Replace entire nearby list (source of truth comes from server per turn)
 export function setNearby(list: Nearby[]) {
   _ctx.nearby = Array.isArray(list) ? list.slice() : [];
 }
 export function clearNearby() { _ctx.nearby = []; }
 
-// NEW — add/remove observed items (e.g., "rock")
 export function observeItem(slug: string, kind: ObservedItem["kind"] = "improv") {
   const s = slug.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   if (!_ctx.observed!.some(o => o.slug === s)) _ctx.observed!.push({ slug: s, kind });
