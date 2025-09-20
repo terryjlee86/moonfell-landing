@@ -54,7 +54,7 @@ export default function RosterSidebar(props: RosterSidebarProps) {
   } = props;
 
   const playerEntry = entries.find((e) => e.id === 'player-id');
-  const entriesWithPlayer = playerEntry ? entries : [{ id: 'player-id', name: 'Player', attitude: 'friendly', distanceM: 0 }, ...entries];
+  const entriesWithPlayer = playerEntry ? entries : [{ id: 'player-id', name: 'Player', kind: 'Player', attitude: 'friendly', distanceM: 0 }, ...entries];
 
   const filtered = React.useMemo(() => {
     const list = hostilesOnly ? entriesWithPlayer.filter((e) => e.attitude === "enemy") : entriesWithPlayer.slice();
@@ -64,7 +64,7 @@ export default function RosterSidebar(props: RosterSidebarProps) {
       const ao = isAttitude(a.attitude) ? attitudeOrder[a.attitude] : 99;
       const bo = isAttitude(b.attitude) ? attitudeOrder[b.attitude] : 99;
       if (ao !== bo) return ao - bo;
-      return (a.name || a.kind).localeCompare(b.name || b.kind);
+      return ((a.name || (a as RosterEntry).kind) ?? '').localeCompare((b.name || (b as RosterEntry).kind) ?? '');
     });
     return list;
   }, [entries, hostilesOnly]);
