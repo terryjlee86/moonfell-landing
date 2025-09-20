@@ -31,5 +31,5 @@ export function deriveTargets(params: {
   const morale = 10 + Math.max(mod(stats.WIL), mod(stats.CHA)) + traitMoraleMod + lb;
   const armorClass = 10 + armorBonus + shieldBonus + mod(stats.AGI); // Calculate AC
 
-  return { melee, ranged, perception, morale };
+  return { melee, ranged, perception, morale, armorClass }; // Include armorClass
 }
