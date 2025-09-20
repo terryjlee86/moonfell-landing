@@ -53,8 +53,11 @@ export default function RosterSidebar(props: RosterSidebarProps) {
     isActionTargeting = false,
   } = props;
 
+  const playerEntry = entries.find((e) => e.id === 'player-id');
+  const entriesWithPlayer = playerEntry ? entries : [{ id: 'player-id', name: 'Player', attitude: 'friendly', distanceM: 0 }, ...entries];
+
   const filtered = React.useMemo(() => {
-    const list = hostilesOnly ? entries.filter((e) => e.attitude === "enemy") : entries.slice();
+    const list = hostilesOnly ? entriesWithPlayer.filter((e) => e.attitude === "enemy") : entriesWithPlayer.slice();
     // Default order: distance asc → attitude priority → name
     list.sort((a, b) => {
       if (a.distanceM !== b.distanceM) return a.distanceM - b.distanceM;
