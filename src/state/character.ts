@@ -1,5 +1,7 @@
 // src/state/character.ts
 
+import { SkillModifierState } from "../types/skill_modifiers";
+
 export type Stats = {
   STR: number;  // Strength: physical power
   AGI: number;  // Agility: speed, reflexes, finesse
@@ -21,6 +23,7 @@ export type CharacterState = {
   stats: Stats;
   conditions: Conditions;
   stance?: "neutral" | "braced" | "sprinting";
+  skillModifiers: SkillModifierState;
 };
 
 let _state: CharacterState = {
@@ -28,6 +31,10 @@ let _state: CharacterState = {
   stats: { STR: 10, AGI: 10, END: 10, INT: 10, WIL: 10, CHA: 10 },
   conditions: {},
   stance: "neutral",
+  skillModifiers: {
+    active: null,
+    cooldowns: {}
+  },
 };
 
 // --- accessors ---

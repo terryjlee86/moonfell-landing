@@ -15,6 +15,8 @@ import { learnedFeed } from "../../feeds/learned_feed";
 
 // Entity AC calculation service
 import { calculateEntityAC, getDefaultAC } from "../../services/entity_ac_service";
+import { SkillModifierService } from "../../services/skill_modifier_service";
+import { getCharacter } from "../../state/character";
 
 // Delta applier (applies Rolls DM apply_now / outcome deltas) — MUTATES state
 import { applyDeltas, type Delta } from "../../services/delta_applier";
@@ -449,10 +451,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (arbiterDecision && (arbiterDecision.kind === "fixed" || arbiterDecision.kind === "opposed")) {
     // Calculate entity AC if this is an opposed roll against a creature or humanoid
     let entityAC: number | undefined;
+    let skillModifierInfo: string | undefined;
+    
     if (arbiterDecision.kind === "opposed") {
-      const acResult = calculateEntityAC(ctx.tags);
+      // Get character's skill modifier state
+      const char = getCharacter();
+      const skillService = new SkillModifierService(char.skillModifiers);
+      
+      // Determine trigger type based on attack type
+      const triggerType = arbiterDecision.attackerAbility === "AGI" ? "when_attacked_ranged" : "when_attacked_melee";
+      
+      const acResult = calculateEntityAC(ctx.tags, skillService, triggerType);
       if (acResult.success) {
         entityAC = acResult.armorClass;
+        
+        // Check if skill modifier was triggered
+        if (acResult.skillModifiers?.acBonus && acResult.skillModifiers.acBonus > 0) {
+          const triggerResult = skillService.checkTrigger(triggerType, (Array.isArray(history) ? history.length : 0) + 1);
+          if (triggerResult.triggered) {
+            skillModifierInfo = `${triggerResult.skillName} triggered (+${acResult.skillModifiers.acBonus} AC)`;
+          }
+        }
       } else {
         // Fallback to default AC if calculation fails
         entityAC = getDefaultAC();
@@ -473,7 +492,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       attackerAbilityBonus: 0,
       armorClass: entityAC, // Pass calculated AC
     });
-    if (debugRoll && out.handled && out.debugLine) __rollLine = out.debugLine;
+    if (debugRoll && out.handled && out.debugLine) {
+      __rollLine = out.debugLine;
+      if (skillModifierInfo) {
+        __rollLine += `\n  ${skillModifierInfo}`;
+      }
+    }
   }
 
   // Prompt (with guard)

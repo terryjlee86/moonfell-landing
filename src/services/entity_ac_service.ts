@@ -8,6 +8,8 @@ import { CREATURE_SPECIES } from "../catalog/creature_species";
 import { HUMANOID_RACES } from "../catalog/humanoid_races";
 import { ROLE_TEMPLATES } from "../catalog/role_templates";
 import { deriveTargets } from "../encounters/derive_targets";
+import { SkillModifierService } from "./skill_modifier_service";
+import { SkillModifierTrigger } from "../types/skill_modifiers";
 
 export type EntityType = "creature" | "humanoid";
 
@@ -15,14 +17,24 @@ export type EntityACResult = {
   success: boolean;
   armorClass?: number;
   error?: string;
+  skillModifiers?: {
+    acBonus: number;
+    activeSkill?: string;
+  };
 };
 
 /**
  * Calculate AC for an entity based on context tags
  * @param contextTags Array of context tags (e.g., ["creature:mirefold:hostile:10m"])
+ * @param skillModifierService Optional skill modifier service for AC bonuses
+ * @param triggerType Type of trigger for skill modifiers (default: "when_attacked_melee")
  * @returns EntityACResult with calculated AC or error
  */
-export function calculateEntityAC(contextTags: string[]): EntityACResult {
+export function calculateEntityAC(
+  contextTags: string[], 
+  skillModifierService?: SkillModifierService,
+  triggerType: SkillModifierTrigger = "when_attacked_melee"
+): EntityACResult {
   // Look for entity tags in context (creature: or humanoid:)
   const entityTags = contextTags.filter(t => t.startsWith("creature:") || t.startsWith("humanoid:"));
   
@@ -33,13 +45,42 @@ export function calculateEntityAC(contextTags: string[]): EntityACResult {
   const entityTag = entityTags[0];
   const [entityType, entityId] = entityTag.split(":");
   
+  let baseResult: EntityACResult;
   if (entityType === "creature") {
-    return calculateCreatureAC(entityId);
+    baseResult = calculateCreatureAC(entityId);
   } else if (entityType === "humanoid") {
-    return calculateHumanoidAC(entityId);
+    baseResult = calculateHumanoidAC(entityId);
   } else {
     return { success: false, error: `Unknown entity type: ${entityType}` };
   }
+
+  // If base calculation failed, return the error
+  if (!baseResult.success) {
+    return baseResult;
+  }
+
+  // Add skill modifier bonuses
+  let skillACBonus = 0;
+  let activeSkillName: string | undefined;
+  
+  if (skillModifierService) {
+    skillACBonus = skillModifierService.getACBonus(triggerType);
+    const activeSkill = skillModifierService.getActiveSkill();
+    if (activeSkill.skill && skillACBonus > 0) {
+      activeSkillName = activeSkill.skill.name;
+    }
+  }
+
+  const finalAC = (baseResult.armorClass || 0) + skillACBonus;
+
+  return {
+    success: true,
+    armorClass: finalAC,
+    skillModifiers: {
+      acBonus: skillACBonus,
+      activeSkill: activeSkillName
+    }
+  };
 }
 
 /**
