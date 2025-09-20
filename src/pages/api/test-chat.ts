@@ -13,9 +13,8 @@ import { getContext } from "../../state/context";
 import { runEncounterCycle } from "../../encounters/orchestrator";
 import { learnedFeed } from "../../feeds/learned_feed";
 
-// Creature database and AC calculation
-import { CREATURE_SPECIES } from "../../catalog/creature_species";
-import { deriveTargets } from "../../encounters/derive_targets";
+// Entity AC calculation service
+import { calculateEntityAC, getDefaultAC } from "../../services/entity_ac_service";
 
 // Delta applier (applies Rolls DM apply_now / outcome deltas) — MUTATES state
 import { applyDeltas, type Delta } from "../../services/delta_applier";
@@ -448,28 +447,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Roll Manager
   let __rollLine = "";
   if (arbiterDecision && (arbiterDecision.kind === "fixed" || arbiterDecision.kind === "opposed")) {
-    // Calculate creature AC if this is an opposed roll against a creature
-    let creatureAC: number | undefined;
+    // Calculate entity AC if this is an opposed roll against a creature or humanoid
+    let entityAC: number | undefined;
     if (arbiterDecision.kind === "opposed") {
-      // Look for creature tags in context
-      const creatureTags = ctx.tags.filter(t => t.startsWith("creature:"));
-      if (creatureTags.length > 0) {
-        // Extract creature kind from first creature tag (e.g., "creature:mirefold:hostile:10m" -> "mirefold")
-        const creatureKind = creatureTags[0].split(":")[1];
-        
-        // Look up creature in database
-        const creature = CREATURE_SPECIES.find(c => c.id === creatureKind);
-        if (creature) {
-          // Calculate AC using deriveTargets
-          const targets = deriveTargets({
-            level: 1, // Default level for now
-            stats: creature.baseStats,
-            profs: creature.proficiencies,
-            armor: undefined, // No armor for wild creatures
-            shield: false, // No shield for wild creatures
-            traitMoraleMod: 0
-          });
-          creatureAC = targets.armorClass;
+      const acResult = calculateEntityAC(ctx.tags);
+      if (acResult.success) {
+        entityAC = acResult.armorClass;
+      } else {
+        // Fallback to default AC if calculation fails
+        entityAC = getDefaultAC();
+        if (debugRoll) {
+          console.warn(`AC calculation failed: ${acResult.error}`);
         }
       }
     }
@@ -483,7 +471,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       debugRoll: !!debugRoll,
       defenderDefenseBonus: 2,
       attackerAbilityBonus: 0,
-      armorClass: creatureAC, // Pass calculated AC
+      armorClass: entityAC, // Pass calculated AC
     });
     if (debugRoll && out.handled && out.debugLine) __rollLine = out.debugLine;
   }

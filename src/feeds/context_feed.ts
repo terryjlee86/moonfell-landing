@@ -9,8 +9,10 @@ export function contextFeed() {
   // Rails
   if (ctx.rails?.length) tags.push(...ctx.rails.map(r => `rail:${r}`));
 
-  // Nearby creatures
+  // Nearby entities (creatures and humanoids)
   for (const n of ctx.nearby) {
+    // For now, assume all entities are creatures until we implement humanoid context deltas
+    // TODO: Add entity type field to context state to distinguish creatures from humanoids
     tags.push(`creature:${n.kind}:${n.attitude}:${Math.round(n.distanceM)}m`);
   }
 
