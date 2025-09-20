@@ -104,6 +104,13 @@ export default function Playtest() {
     sortedEntries = allEntries.map(entry => ({ actor: entry, roll: 0 }));
   }
 
+  // Format and display initiative roll outcomes
+  if (hasEnemies(allEntries)) {
+    const initiativeResults = sortedEntries.map(({ actor, roll }) => `${actor.name} = ${roll}`).join(', ');
+    const debugMessage: Turn = { role: "assistant", content: `Initiative rolls: ${initiativeResults}` };
+    setHistory((h) => [...h, debugMessage]);
+  }
+
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
     // Matches lines that start with "1. Something", "2) Something", "3 - Something", etc.
