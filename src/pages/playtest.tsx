@@ -5,6 +5,7 @@ import { setNearby } from "../state/context";
 import { rollInitiative } from "../services/initiative_service";
 import { EntitySpawn } from "../encounters/types";
 import { Attitude } from "../types/roster";
+import { RosterEntry } from "../types/roster";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -36,8 +37,22 @@ export default function Playtest() {
   // Pull a snapshot for the roster UI (re-computed on render; inexpensive)
   const { entries } = getRosterSnapshot();
 
-  // Correct conversion logic
-  const entitySpawns: EntitySpawn[] = entries.map(entry => ({
+  // Ensure the player is included in the roster
+  const playerEntry: RosterEntry = {
+    id: 'player-id',
+    name: 'Player',
+    kind: 'humanoid',
+    attitude: 'friendly',
+    distanceM: 0,
+    cover: null,
+    status: [],
+  };
+
+  // Add player entry to the entries list if not already present
+  const allEntries = entries.some(e => e.id === playerEntry.id) ? entries : [playerEntry, ...entries];
+
+  // Convert RosterEntry objects to EntitySpawn objects
+  const entitySpawns: EntitySpawn[] = allEntries.map(entry => ({
     kind: "humanoid", // Assuming all entries are humanoid for simplicity
     raceId: entry.kind, // Assuming kind can be used as raceId
     roleId: "default-role", // Placeholder roleId
