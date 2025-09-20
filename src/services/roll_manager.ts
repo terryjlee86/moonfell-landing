@@ -147,6 +147,7 @@ export function resolveActionHit(input: ResolveActionHitInput): ResolveActionHit
 
       ability,
       attackerAbilityBonus: input.attackerAbilityBonus ?? 0,
+      armorClass: input.armorClass, // Pass armorClass to resolveHit
 
       opposed: false,
       dcHint
@@ -175,6 +176,7 @@ export function resolveActionHit(input: ResolveActionHitInput): ResolveActionHit
 
     ability,
     attackerAbilityBonus: input.attackerAbilityBonus ?? 0,
+    armorClass: input.armorClass, // Pass armorClass to resolveHit
 
     opposed: true,
     defenderDefenseBonus
