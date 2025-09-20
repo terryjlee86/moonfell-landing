@@ -61,8 +61,8 @@ export default function RosterSidebar(props: RosterSidebarProps) {
     // Default order: distance asc → attitude priority → name
     list.sort((a, b) => {
       if (a.distanceM !== b.distanceM) return a.distanceM - b.distanceM;
-      const ao = attitudeOrder[a.attitude] ?? 99;
-      const bo = attitudeOrder[b.attitude] ?? 99;
+      const ao = isAttitude(a.attitude) ? attitudeOrder[a.attitude] : 99;
+      const bo = isAttitude(b.attitude) ? attitudeOrder[b.attitude] : 99;
       if (ao !== bo) return ao - bo;
       return (a.name || a.kind).localeCompare(b.name || b.kind);
     });
@@ -170,6 +170,10 @@ function toneForAttitude(a: Attitude): "danger" | "accent" | "muted" | "neutral"
     default:
       return "neutral";
   }
+}
+
+function isAttitude(value: string): value is Attitude {
+  return value in attitudeOrder;
 }
 
 // ---------------- styles (inline to keep this file self-contained) ----------------
