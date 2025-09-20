@@ -9,8 +9,8 @@ import * as React from "react";
 import type { RosterEntry, Attitude } from "../../types/roster";
 
 export type RosterSidebarProps = {
-  /** Full list as provided by the selector. */
-  entries: RosterEntry[];
+  /** Sorted list of actors by initiative. */
+  sortedEntries: { actor: RosterEntry; roll: number }[];
 
   /** Is the sidebar visible. */
   open: boolean;
@@ -43,7 +43,7 @@ const attitudeOrder: Record<Attitude, number> = {
 
 export default function RosterSidebar(props: RosterSidebarProps) {
   const {
-    entries,
+    sortedEntries,
     open,
     onToggle,
     hostilesOnly = false,
@@ -52,22 +52,6 @@ export default function RosterSidebar(props: RosterSidebarProps) {
     onSelectTarget,
     isActionTargeting = false,
   } = props;
-
-  const playerEntry = entries.find((e) => e.id === 'player-id');
-  const entriesWithPlayer: RosterEntry[] = playerEntry ? entries : [{ id: 'player-id', name: 'Player', kind: 'Player', attitude: 'friendly', distanceM: 0, cover: null, status: [] }, ...entries];
-
-  const filtered = React.useMemo(() => {
-    const list = hostilesOnly ? entriesWithPlayer.filter((e) => e.attitude === "enemy") : entriesWithPlayer.slice();
-    // Default order: distance asc → attitude priority → name
-    list.sort((a, b) => {
-      if (a.distanceM !== b.distanceM) return a.distanceM - b.distanceM;
-      const ao = isAttitude(a.attitude) ? attitudeOrder[a.attitude] : 99;
-      const bo = isAttitude(b.attitude) ? attitudeOrder[b.attitude] : 99;
-      if (ao !== bo) return ao - bo;
-      return ((a.name || (a as RosterEntry).kind) ?? '').localeCompare((b.name || (b as RosterEntry).kind) ?? '');
-    });
-    return list;
-  }, [entries, hostilesOnly]);
 
   return (
     <aside style={styles.wrapper(open)} aria-hidden={!open}>
@@ -94,34 +78,34 @@ export default function RosterSidebar(props: RosterSidebarProps) {
       </header>
 
       <div style={styles.list(open)}>
-        {filtered.length === 0 ? (
+        {sortedEntries.length === 0 ? (
           <div style={styles.empty}>No creatures nearby.</div>
         ) : (
-          filtered.map((e) => {
-            const selected = e.id === (selectedTargetId ?? null);
+          sortedEntries.map(({ actor }) => {
+            const selected = actor.id === (selectedTargetId ?? null);
             return (
               <div
-                key={e.id}
+                key={actor.id}
                 role="button"
-                onClick={() => onSelectTarget?.(selected ? null : e.id)}
+                onClick={() => onSelectTarget?.(selected ? null : actor.id)}
                 style={styles.row(selected)}
-                title={`#${e.id}`}
+                title={`#${actor.id}`}
               >
                 <div style={styles.rowMain}>
                   <div style={styles.nameLine}>
-                    <span style={styles.name}>{e.name || e.kind}</span>
-                    <span style={styles.distance}>{e.distanceM}m</span>
+                    <span style={styles.name}>{actor.name || actor.kind}</span>
+                    <span style={styles.distance}>{actor.distanceM}m</span>
                   </div>
                   <div style={styles.badgesLine}>
-                    <Badge tone={toneForAttitude(e.attitude as Attitude)}>{e.attitude}</Badge>
-                    {e.cover && e.cover !== "none" && (
-                      <Badge tone="muted">{coverLabel(e.cover)}</Badge>
+                    <Badge tone={toneForAttitude(actor.attitude)}>{actor.attitude}</Badge>
+                    {actor.cover && actor.cover !== "none" && (
+                      <Badge tone="muted">{coverLabel(actor.cover)}</Badge>
                     )}
-                    {e.status?.slice(0, 3).map((s) => (
+                    {actor.status?.slice(0, 3).map((s) => (
                       <Badge key={s} tone="neutral">{s}</Badge>
                     ))}
-                    {e.status && e.status.length > 3 && (
-                      <Badge tone="neutral">+{e.status.length - 3}</Badge>
+                    {actor.status && actor.status.length > 3 && (
+                      <Badge tone="neutral">+{actor.status.length - 3}</Badge>
                     )}
                     {selected && isActionTargeting && (
                       <Badge tone="accent">Targeted</Badge>

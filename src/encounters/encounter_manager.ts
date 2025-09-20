@@ -9,6 +9,11 @@ import { filterCandidates } from "./candidate_filter";
 import { composeEncounter } from "./composer";
 import { deriveTargets } from "./derive_targets";
 
+function rollInitiative(actors: EntitySpawn[]): { actor: EntitySpawn; roll: number }[] {
+  return actors.map(actor => ({ actor, roll: Math.floor(Math.random() * 20) + 1 }))
+               .sort((a, b) => b.roll - a.roll);
+}
+
 export function maybeSpawnEncounter(input: EncounterInputs): EncounterBlueprint | null {
   if (!rollDensity(input.context.desiredDensity)) return null;
 
@@ -32,6 +37,9 @@ export function maybeSpawnEncounter(input: EncounterInputs): EncounterBlueprint 
     }
     return { kind:"humanoid", raceId:p.cand.raceId, roleId:p.cand.roleId, faction:p.cand.faction, level:p.level, count:p.count };
   });
+
+  const initiativeOrder = rollInitiative(composition);
+  if (input.toggles?.debug) console.info("[initiative rolls]", initiativeOrder);
 
   const targets: Record<string, DerivedTargets> = {};
   composition.forEach(spawn => {
