@@ -2,9 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import RosterSidebar from "../ui/roster/RosterSidebar";
 import { getRosterSnapshot } from "../state/selectors/roster_selector";
 import { setNearby } from "../state/context";
-import { rollInitiative } from "../services/initiative_service";
-import { EntitySpawn } from "../encounters/types";
-import { Attitude } from "../types/roster";
+import { enterCombat, toNonCombatOrder, CombatTurnState } from "../services/combat_turn_service";
 import { RosterEntry } from "../types/roster";
 
 type Turn = { role: "user" | "assistant"; content: string };
@@ -29,7 +27,7 @@ export default function Playtest() {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
 
   // Combat/initiative local state
-  const [inCombat, setInCombat] = useState(false);
+  const [turn, setTurn] = useState<CombatTurnState>({ order: [], index: 0, round: 0, inCombat: false });
   const [initiativeEntries, setInitiativeEntries] = useState<{ actor: RosterEntry; roll: number }[]>([]);
   const prevHasEnemiesRef = useRef<boolean>(false);
 
@@ -63,57 +61,21 @@ export default function Playtest() {
 
   // Keep non-combat roster order in sync
   useEffect(() => {
-    if (!inCombat) {
-      setInitiativeEntries(allEntries.map(entry => ({ actor: entry, roll: 0 })));
+    if (!turn.inCombat) {
+      setInitiativeEntries(toNonCombatOrder(allEntries));
     }
-  }, [allEntries, inCombat]);
+  }, [allEntries, turn.inCombat]);
 
   // Enter combat when first enemy appears; roll initiative once and emit a single debug line
   useEffect(() => {
     const prev = prevHasEnemiesRef.current;
     const now = hasEnemies(allEntries);
     if (!prev && now) {
-      const entitySpawns: EntitySpawn[] = allEntries.map(entry => ({
-        kind: "humanoid",
-        raceId: entry.kind,
-        roleId: "default-role",
-        level: 1,
-        count: 1,
-        faction: entry.attitude === "enemy" ? "hostile" : "neutral",
-      }));
-      const rolled = rollInitiative(entitySpawns).map(({ actor, roll }) => {
-        if (actor.kind === "humanoid") {
-          return {
-            actor: {
-              id: actor.raceId,
-              name: actor.raceId,
-              kind: actor.raceId,
-              attitude: (actor.faction === "hostile" ? "enemy" : "neutral") as Attitude,
-              distanceM: 0,
-              cover: null,
-              status: [],
-            },
-            roll,
-          } as { actor: RosterEntry; roll: number };
-        }
-        return {
-          actor: {
-            id: actor.speciesId,
-            name: actor.speciesId,
-            kind: actor.speciesId,
-            attitude: "neutral" as Attitude,
-            distanceM: 0,
-            cover: null,
-            status: [],
-          },
-          roll,
-        } as { actor: RosterEntry; roll: number };
-      });
-      setInitiativeEntries(rolled);
-      setInCombat(true);
+      const { state, debugLine } = enterCombat(allEntries);
+      setTurn(state);
+      setInitiativeEntries(state.order);
       if (debugRoll || debug) {
-        const initiativeResults = rolled.map(({ actor, roll }) => `${actor.name} = ${roll}`).join(", ");
-        setHistory(h => [...h, { role: "assistant", content: `Initiative rolls: ${initiativeResults}` }]);
+        setHistory(h => [...h, { role: "assistant", content: debugLine }]);
       }
     }
     prevHasEnemiesRef.current = now;
