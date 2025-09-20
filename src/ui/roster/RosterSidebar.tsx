@@ -54,7 +54,7 @@ export default function RosterSidebar(props: RosterSidebarProps) {
   } = props;
 
   const playerEntry = entries.find((e) => e.id === 'player-id');
-  const entriesWithPlayer = playerEntry ? entries : [{ id: 'player-id', name: 'Player', kind: 'Player', attitude: 'friendly', distanceM: 0 }, ...entries];
+  const entriesWithPlayer: RosterEntry[] = playerEntry ? entries : [{ id: 'player-id', name: 'Player', kind: 'Player', attitude: 'friendly', distanceM: 0, cover: null, status: [] }, ...entries];
 
   const filtered = React.useMemo(() => {
     const list = hostilesOnly ? entriesWithPlayer.filter((e) => e.attitude === "enemy") : entriesWithPlayer.slice();
@@ -113,7 +113,7 @@ export default function RosterSidebar(props: RosterSidebarProps) {
                     <span style={styles.distance}>{e.distanceM}m</span>
                   </div>
                   <div style={styles.badgesLine}>
-                    <Badge tone={toneForAttitude(e.attitude)}>{e.attitude}</Badge>
+                    <Badge tone={toneForAttitude(e.attitude as Attitude)}>{e.attitude}</Badge>
                     {e.cover && e.cover !== "none" && (
                       <Badge tone="muted">{coverLabel(e.cover)}</Badge>
                     )}
