@@ -1,6 +1,6 @@
 export type GameplayMode = "scenario" | "travel" | "rest";
 
-type GameplayState = {
+export type GameplayState = {
   mode: GameplayMode;
   debug: { scenarioSpawnedOnce: boolean };
 };

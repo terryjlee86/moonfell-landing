@@ -1,12 +1,5 @@
 import { RosterEntry, Attitude } from "../types/roster";
-
-export type TurnEntry = { actor: RosterEntry; roll: number };
-export type CombatTurnState = {
-  order: TurnEntry[];
-  index: number;
-  round: number;
-  inCombat: boolean;
-};
+import { TurnEntry, CombatTurnState } from "../types/combat";
 
 function d20(rng?: () => number): number {
   const r = rng ? rng() : Math.random();

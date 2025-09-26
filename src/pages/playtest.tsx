@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import RosterSidebar from "../ui/roster/RosterSidebar";
-import { getRosterSnapshot } from "../state/selectors/roster_selector";
-import { setNearby } from "../state/context";
-import { enterCombat, toNonCombatOrder, CombatTurnState } from "../services/combat_turn_service";
+import { enterCombat, toNonCombatOrder } from "../services/combat_turn_service";
+import { CombatTurnState } from "../types/combat";
 import { RosterEntry } from "../types/roster";
+import { PlayerGameState, SessionResponse, GameStateResponse } from "../types/session";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -16,10 +16,15 @@ export default function Playtest() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
 
+  // Session management
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [gameState, setGameState] = useState<PlayerGameState | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+
   // Debug toggles
-  const [debug, setDebug] = useState(false);           // Arbiter + Observer debug
-  const [debugRoll, setDebugRoll] = useState(false);   // Rolls math banner
-  const [debugFeeds, setDebugFeeds] = useState(false); // NEW: feeds tag wall on/off
+  const [debug, setDebug] = useState(false);
+  const [debugRoll, setDebugRoll] = useState(false);
+  const [debugFeeds, setDebugFeeds] = useState(false);
 
   // Roster UI state (local-only)
   const [openRoster, setOpenRoster] = useState(true);
@@ -33,12 +38,82 @@ export default function Playtest() {
 
   const viewRef = useRef<HTMLDivElement>(null);
 
+  // Initialize session on component mount
   useEffect(() => {
-    viewRef.current?.scrollTo({ top: viewRef.current.scrollHeight, behavior: "smooth" });
-  }, [history, intro]);
+    initializeSession();
+  }, []);
 
-  // Pull a snapshot for the roster UI (re-computed on render; inexpensive)
-  const { entries } = getRosterSnapshot();
+  // Initialize player session
+  const initializeSession = async () => {
+    setSessionLoading(true);
+    try {
+      const response = await fetch('/api/init-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: `player_${Date.now()}` })
+      });
+      
+      const data: SessionResponse = await response.json();
+      
+      if (data.success) {
+        setSessionId(data.sessionId);
+        setGameState(data.gameState);
+        console.log('Session initialized:', data.sessionId);
+      } else {
+        setErr(data.error || 'Failed to initialize session');
+      }
+    } catch (error) {
+      console.error('Session initialization error:', error);
+      setErr('Failed to initialize session');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  // Update game state on server
+  const updateGameState = async (updates: Partial<PlayerGameState>) => {
+    if (!sessionId) return false;
+    
+    try {
+      const response = await fetch('/api/game-state', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        },
+        body: JSON.stringify(updates)
+      });
+      
+      const data: GameStateResponse = await response.json();
+      
+      if (data.success && data.gameState) {
+        setGameState(data.gameState);
+        return true;
+      } else {
+        console.error('Game state update failed:', data.error);
+        return false;
+      }
+    } catch (error) {
+      console.error('Game state update error:', error);
+      return false;
+    }
+  };
+
+  // Get roster entries from session game state
+  const getRosterEntries = (): RosterEntry[] => {
+    if (!gameState?.context?.nearby) return [];
+    
+    // Convert nearby context to roster entries
+    return gameState.context.nearby.map(nearby => ({
+      id: nearby.id,
+      name: nearby.name || nearby.kind,
+      kind: nearby.kind,
+      attitude: nearby.attitude as any,
+      distanceM: nearby.distanceM,
+      cover: nearby.cover as any,
+      status: nearby.status || []
+    }));
+  };
 
   // Ensure the player is included in the roster
   const playerEntry: RosterEntry = {
@@ -52,7 +127,10 @@ export default function Playtest() {
   };
 
   // Add player entry to the entries list if not already present
-  const allEntries = entries.some(e => e.id === playerEntry.id) ? entries : [playerEntry, ...entries];
+  const allEntries = getRosterEntries();
+  const entriesWithPlayer = allEntries.some(e => e.id === playerEntry.id) 
+    ? allEntries 
+    : [playerEntry, ...allEntries];
 
   // Function to check if there are any enemies in the entries
   function hasEnemies(entries: RosterEntry[]): boolean {
@@ -62,24 +140,28 @@ export default function Playtest() {
   // Keep non-combat roster order in sync
   useEffect(() => {
     if (!turn.inCombat) {
-      setInitiativeEntries(toNonCombatOrder(allEntries));
+      setInitiativeEntries(toNonCombatOrder(entriesWithPlayer));
     }
-  }, [allEntries, turn.inCombat]);
+  }, [entriesWithPlayer, turn.inCombat]);
 
   // Enter combat when first enemy appears; roll initiative once and emit a single debug line
   useEffect(() => {
     const prev = prevHasEnemiesRef.current;
-    const now = hasEnemies(allEntries);
+    const now = hasEnemies(entriesWithPlayer);
     if (!prev && now) {
-      const { state, debugLine } = enterCombat(allEntries);
+      const { state, debugLine } = enterCombat(entriesWithPlayer);
       setTurn(state);
       setInitiativeEntries(state.order);
+      
+      // Update combat state in session
+      updateGameState({ combat: state });
+      
       if (debugRoll || debug) {
         setHistory(h => [...h, { role: "assistant", content: debugLine }]);
       }
     }
     prevHasEnemiesRef.current = now;
-  }, [allEntries, debugRoll, debug]);
+  }, [entriesWithPlayer, debugRoll, debug]);
 
   // --- utility: pull numbered options from the most recent assistant message
   function extractNumberedOptionsFrom(text: string): Record<string, string> {
@@ -129,7 +211,11 @@ export default function Playtest() {
       const r = await fetch("/api/test-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passcode, init: true }),
+        body: JSON.stringify({ 
+          passcode, 
+          init: true,
+          sessionId // Include session ID
+        }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -139,7 +225,16 @@ export default function Playtest() {
       }
       setIntro(j.intro || "Welcome to the Moonfell preview.");
       setAuthed(true);
-      if (Array.isArray(j?.nearby)) setNearby(j.nearby);
+      
+      // Update context in session if nearby data is provided
+      if (Array.isArray(j?.nearby)) {
+        await updateGameState({
+          context: {
+            ...gameState?.context,
+            nearby: j.nearby
+          }
+        });
+      }
     } catch (e: any) {
       setErr("Network error.");
     } finally {
@@ -149,13 +244,13 @@ export default function Playtest() {
 
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !sessionId) return;
     setErr("");
 
     // Expand numeric selection to the option text so it behaves as if the player typed it.
     const expanded = expandNumericSelectionIfAny(input);
 
-    // Push the (possibly expanded) text to history as the user’s message
+    // Push the (possibly expanded) text to history as the user's message
     const userTurn: Turn = { role: "user", content: expanded.trim() };
     setHistory((h) => [...h, userTurn]);
     setInput("");
@@ -168,12 +263,13 @@ export default function Playtest() {
         body: JSON.stringify({
           passcode,
           message: userTurn.content,
-          history,               // keep as-is (server already trims to last N)
+          history,
           scenarioId: "forest_ambush",
-          debug,                 // Arbiter/Observer
-          debugRoll,             // Rolls
-          debugFeeds,            // NEW: feeds tag wall
-          targetId: selectedTargetId ?? undefined
+          debug,
+          debugRoll,
+          debugFeeds,
+          targetId: selectedTargetId ?? undefined,
+          sessionId // Include session ID
         }),
       });
       const j = await r.json();
@@ -183,7 +279,16 @@ export default function Playtest() {
         return;
       }
       const reply: string = j.reply || "(no reply)";
-      if (Array.isArray(j?.nearby)) setNearby(j.nearby);
+      
+      // Update context in session if nearby data is provided
+      if (Array.isArray(j?.nearby)) {
+        await updateGameState({
+          context: {
+            ...gameState?.context,
+            nearby: j.nearby
+          }
+        });
+      }
 
       // Optional: separate debug messages if backend ever returns them
       const debugMessages: Turn[] = Array.isArray(j.debugMessages) ? j.debugMessages : [];
@@ -197,6 +302,37 @@ export default function Playtest() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Show loading state while initializing session
+  if (sessionLoading) {
+    return (
+      <main style={styles.main}>
+        <section style={styles.card}>
+          <div style={{ textAlign: 'center', padding: '2rem' }}>
+            <h2>Initializing Game Session...</h2>
+            <p>Setting up your personal game world...</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // Show error if session failed to initialize
+  if (!sessionId || !gameState) {
+    return (
+      <main style={styles.main}>
+        <section style={styles.card}>
+          <div style={{ textAlign: 'center', padding: '2rem' }}>
+            <h2>Session Error</h2>
+            <p>{err || 'Failed to initialize game session'}</p>
+            <button onClick={initializeSession} style={styles.button}>
+              Retry
+            </button>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   return (
